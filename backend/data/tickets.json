@@ -1,0 +1,123 @@
+[
+  {
+    "ticket_id": "TK2A1B3C4D01",
+    "title": "转人工客服请求",
+    "detail": "转人工原因：用户咨询降噪耳机选购后要求转接人工客服",
+    "category": "other",
+    "contact": "3721",
+    "order_id": "",
+    "priority": "high",
+    "status": "待处理",
+    "created_at": "2026-09-16 10:12",
+    "assignee": "人工客服 · Vicky",
+    "reply": "已协助用户对比 Volcano Pods 3 与头戴降噪耳机 Studio Pro，用户下单耳机，工单关闭。",
+    "replied_at": "2026-09-28 17:11"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D02",
+    "title": "催件：SO20260810001 火山速运派送多日未送达",
+    "detail": "订单 SO20260810001（Volcano Pods 3 真无线降噪耳机）由火山速运承运，运单号 VL8820472631，8 月 16 日已处于「浦东张江营业点派送中」，截止今日仍未签收，请催件并跟进物流状态。客户联系方式尾号 3721。",
+    "category": "logistics",
+    "contact": "3721",
+    "order_id": "SO20260810001",
+    "priority": "normal",
+    "status": "处理中",
+    "created_at": "2026-08-21 16:25",
+    "assignee": "物流专员 · 陈"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D03",
+    "title": "退款申请（仅退款）",
+    "detail": "订单 SO20260812003 申请仅退款，原因：拍错尺码，商品尚未发货。金额 259 元，待财务原路退回。",
+    "category": "refund",
+    "contact": "3721",
+    "order_id": "SO20260812003",
+    "priority": "high",
+    "status": "待处理",
+    "created_at": "2026-09-08 16:51"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D04",
+    "title": "退款申请（退货退款）",
+    "detail": "订单 SO20260820010 申请退货退款，原因：面膜使用后轻微过敏，商品未拆封 2 盒申请退回。金额 367 元。",
+    "category": "refund",
+    "contact": "9084",
+    "order_id": "SO20260820010",
+    "priority": "high",
+    "status": "处理中",
+    "created_at": "2026-08-24 11:03",
+    "assignee": "售后专员 · 林"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D05",
+    "title": "商品质量问题：连衣裙 seam 开线",
+    "detail": "订单 SO20260812003 对应法式碎花连衣裙收货后发现袖口开线，属于质量问题，客户要求换货并要求商家承担来回运费。",
+    "category": "quality",
+    "contact": "3721",
+    "order_id": "SO20260812003",
+    "priority": "normal",
+    "status": "待处理",
+    "created_at": "2026-09-10 19:20"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D06",
+    "title": "生鲜理赔：三文鱼到手化冻",
+    "detail": "客户反馈冰鲜挪威三文鱼（订单 SO20260901006 同批次）签收时冰袋已完全化冻，怀疑冷链断链，上传照片申请按比例理赔。",
+    "category": "complaint",
+    "contact": "2265",
+    "order_id": "",
+    "priority": "high",
+    "status": "已完成",
+    "created_at": "2026-09-02 09:15",
+    "assignee": "生鲜理赔 · 赵",
+    "reply": "经核实为末端配送延误导致，已赔付 50% 金额并赠送 8.8 折生鲜券，客户接受。",
+    "replied_at": "2026-09-02 15:30"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D07",
+    "title": "修改收货地址",
+    "detail": "订单 SO20260905009（待发货）客户要求将收货地址由「四川省成都市高新区天府大道 999 号」改为「四川省成都市武侯区科华北路 62 号」，尚未发货可协助修改。",
+    "category": "other",
+    "contact": "7428",
+    "order_id": "SO20260905009",
+    "priority": "low",
+    "status": "已完成",
+    "created_at": "2026-09-06 14:00",
+    "assignee": "订单专员 · 王",
+    "reply": "已在发货前完成地址修改，物流将按新地址配送。",
+    "replied_at": "2026-09-06 14:25"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D08",
+    "title": "发票补开申请",
+    "detail": "客户订单 SO20260903007（27 英寸显示器）下单时未勾选发票，现需提供企业抬头补开增值税专用发票，开票资料已随工单提交。",
+    "category": "other",
+    "contact": "5130",
+    "order_id": "SO20260903007",
+    "priority": "normal",
+    "status": "待处理",
+    "created_at": "2026-09-07 10:40"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D09",
+    "title": "大家电安装预约",
+    "detail": "订单 SO20260826008 破壁料理机支持送装一体，客户要求周六上午上门，需提前电话预约并确认免费标准安装。",
+    "category": "other",
+    "contact": "3721",
+    "order_id": "SO20260826008",
+    "priority": "low",
+    "status": "已转人工",
+    "created_at": "2026-09-12 18:05"
+  },
+  {
+    "ticket_id": "TK2A1B3C4D10",
+    "title": "建议：希望增加以旧换新",
+    "detail": "客户建议数码品类（耳机、键盘、手表）上线以旧换新服务，旧设备可折价抵扣，提升复购体验。",
+    "category": "suggestion",
+    "contact": "",
+    "order_id": "",
+    "priority": "low",
+    "status": "待处理",
+    "created_at": "2026-09-14 11:30"
+  }
+]

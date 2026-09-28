@@ -1,0 +1,19 @@
+[project]
+name = "volcano-customer-service-agent"
+version = "0.1.0"
+description = "Volcano toC 智能客服系统：基于 AgentScope 2.0 的电商客服 Agent，含离线规则模型与可视化调试平台"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "agentscope>=2.0.6",
+    "fastapi>=0.115",
+    "python-dotenv>=1.0",
+    "uvicorn[standard]>=0.30",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

@@ -1,0 +1,327 @@
+[
+  {
+    "order_id": "SO20260810001",
+    "user_id": "U10001",
+    "phone_tail": "3721",
+    "items": [
+      {
+        "name": "Volcano Pods 3 真无线降噪耳机",
+        "qty": 1,
+        "price": 399
+      }
+    ],
+    "amount": 399,
+    "status": "已发货",
+    "created_at": "2026-08-10 21:14",
+    "address": "浙江省杭州市西湖区文三路 199 号",
+    "logistics": {
+      "company": "火山速运",
+      "tracking_no": "VL8820472631",
+      "timeline": [
+        {
+          "time": "2026-08-11 09:20",
+          "desc": "商家已发货，包裹等待揽收"
+        },
+        {
+          "time": "2026-08-11 19:42",
+          "desc": "【杭州转运中心】快件已揽收"
+        },
+        {
+          "time": "2026-08-13 06:15",
+          "desc": "【杭州转运中心】快件已发出，下一站 上海转运中心"
+        },
+        {
+          "time": "2026-08-14 15:38",
+          "desc": "【上海转运中心】到达处理中心"
+        },
+        {
+          "time": "2026-08-16 08:02",
+          "desc": "【浦东张江营业点】派送中，快递员 赵师傅 138****6621"
+        }
+      ]
+    }
+  },
+  {
+    "order_id": "SO20260805002",
+    "user_id": "U10001",
+    "phone_tail": "3721",
+    "items": [
+      {
+        "name": "保温焖烧杯 500ml（星空白）",
+        "qty": 1,
+        "price": 129
+      },
+      {
+        "name": "便携餐具四件套",
+        "qty": 1,
+        "price": 39.9
+      }
+    ],
+    "amount": 168.9,
+    "status": "已签收",
+    "created_at": "2026-08-05 10:03",
+    "signed_at": "2026-08-08 17:26",
+    "address": "浙江省杭州市西湖区文三路 199 号",
+    "logistics": {
+      "company": "火山速运",
+      "tracking_no": "VL8820391150",
+      "timeline": [
+        {
+          "time": "2026-08-05 15:11",
+          "desc": "商家已发货"
+        },
+        {
+          "time": "2026-08-08 17:26",
+          "desc": "已签收，签收人：本人"
+        }
+      ]
+    }
+  },
+  {
+    "order_id": "SO20260812003",
+    "user_id": "U10001",
+    "phone_tail": "3721",
+    "items": [
+      {
+        "name": "法式碎花连衣裙（M 码）",
+        "qty": 1,
+        "price": 259
+      }
+    ],
+    "amount": 259,
+    "status": "待发货",
+    "created_at": "2026-08-12 22:47",
+    "address": "浙江省杭州市西湖区文三路 199 号",
+    "logistics": null
+  },
+  {
+    "order_id": "SO20260721004",
+    "user_id": "U10001",
+    "phone_tail": "3721",
+    "items": [
+      {
+        "name": "机械键盘 K87 茶轴",
+        "qty": 1,
+        "price": 499
+      }
+    ],
+    "amount": 499,
+    "status": "已签收",
+    "created_at": "2026-07-21 13:55",
+    "signed_at": "2026-07-24 11:08",
+    "address": "浙江省杭州市西湖区文三路 199 号",
+    "logistics": {
+      "company": "顺丰速运",
+      "tracking_no": "SF3390812764",
+      "timeline": [
+        {
+          "time": "2026-07-21 18:03",
+          "desc": "商家已发货"
+        },
+        {
+          "time": "2026-07-24 11:08",
+          "desc": "已签收，签收人：前台代收"
+        }
+      ]
+    }
+  },
+  {
+    "order_id": "SO20260815005",
+    "user_id": "U10002",
+    "phone_tail": "9084",
+    "items": [
+      {
+        "name": "氨基酸温和洗面奶 150ml",
+        "qty": 2,
+        "price": 89
+      }
+    ],
+    "amount": 178,
+    "status": "已取消",
+    "created_at": "2026-08-15 09:31",
+    "address": "上海市浦东新区张江高科 666 号",
+    "logistics": null,
+    "cancelled_at": "2026-08-20 09:40",
+    "cancel_reason": "用户主动取消"
+  },
+  {
+    "order_id": "SO20260901006",
+    "user_id": "U10003",
+    "phone_tail": "2265",
+    "items": [
+      {
+        "name": "Volcano Band 8 智能运动手环（曜石黑）",
+        "qty": 1,
+        "price": 249
+      },
+      {
+        "name": "每日坚果混合装（30 包）",
+        "qty": 1,
+        "price": 89.9
+      }
+    ],
+    "amount": 338.9,
+    "status": "待付款",
+    "created_at": "2026-09-01 20:12",
+    "address": "广东省深圳市南山区科技园路 8 号",
+    "logistics": null
+  },
+  {
+    "order_id": "SO20260903007",
+    "user_id": "U10004",
+    "phone_tail": "5130",
+    "items": [
+      {
+        "name": "27 英寸 2K IPS 显示器",
+        "qty": 1,
+        "price": 1199
+      }
+    ],
+    "amount": 1199,
+    "status": "已发货",
+    "created_at": "2026-09-03 11:28",
+    "address": "北京市朝阳区望京 SOHO T3 座",
+    "logistics": {
+      "company": "火山速运",
+      "tracking_no": "VL8890330077",
+      "timeline": [
+        {
+          "time": "2026-09-04 09:10",
+          "desc": "商家已发货，大件预约配送"
+        },
+        {
+          "time": "2026-09-05 07:45",
+          "desc": "【北京顺义转运中心】快件已到达"
+        },
+        {
+          "time": "2026-09-06 13:20",
+          "desc": "【望京营业点】派送中，配送员将提前电话预约上门时间"
+        }
+      ]
+    }
+  },
+  {
+    "order_id": "SO20260826008",
+    "user_id": "U10001",
+    "phone_tail": "3721",
+    "items": [
+      {
+        "name": "家用静音破壁料理机",
+        "qty": 1,
+        "price": 599
+      }
+    ],
+    "amount": 599,
+    "status": "已签收",
+    "created_at": "2026-08-26 15:02",
+    "signed_at": "2026-08-29 10:41",
+    "address": "浙江省杭州市西湖区文三路 199 号",
+    "logistics": {
+      "company": "顺丰速运",
+      "tracking_no": "SF3396260188",
+      "timeline": [
+        {
+          "time": "2026-08-27 08:30",
+          "desc": "商家已发货"
+        },
+        {
+          "time": "2026-08-29 10:41",
+          "desc": "已签收，签收人：本人"
+        }
+      ]
+    }
+  },
+  {
+    "order_id": "SO20260905009",
+    "user_id": "U10005",
+    "phone_tail": "7428",
+    "items": [
+      {
+        "name": "家用 TPE 瑜伽垫（8mm）",
+        "qty": 1,
+        "price": 99
+      },
+      {
+        "name": "轻量缓震跑步鞋",
+        "qty": 1,
+        "price": 359
+      }
+    ],
+    "amount": 458,
+    "status": "待发货",
+    "created_at": "2026-09-05 19:37",
+    "address": "四川省成都市高新区天府大道 999 号",
+    "logistics": null
+  },
+  {
+    "order_id": "SO20260820010",
+    "user_id": "U10002",
+    "phone_tail": "9084",
+    "items": [
+      {
+        "name": "玻尿酸补水面膜（20 片）",
+        "qty": 2,
+        "price": 99
+      },
+      {
+        "name": "烟酰胺精华原液 30ml",
+        "qty": 1,
+        "price": 169
+      }
+    ],
+    "amount": 367,
+    "status": "退款中",
+    "created_at": "2026-08-20 14:20",
+    "address": "上海市浦东新区张江高科 666 号",
+    "logistics": {
+      "company": "火山速运",
+      "tracking_no": "VL8820805512",
+      "timeline": [
+        {
+          "time": "2026-08-21 10:05",
+          "desc": "商家已发货"
+        },
+        {
+          "time": "2026-08-23 16:48",
+          "desc": "已签收，签收人：本人"
+        }
+      ]
+    }
+  },
+  {
+    "order_id": "SO20260910011",
+    "user_id": "U10003",
+    "phone_tail": "2265",
+    "items": [
+      {
+        "name": "婴儿恒温调奶器",
+        "qty": 1,
+        "price": 199
+      },
+      {
+        "name": "超薄透气纸尿裤（L 码 64 片）",
+        "qty": 1,
+        "price": 138
+      }
+    ],
+    "amount": 337,
+    "status": "已完成",
+    "created_at": "2026-06-10 09:15",
+    "signed_at": "2026-06-13 12:30",
+    "address": "广东省深圳市南山区科技园路 8 号",
+    "logistics": {
+      "company": "中通快递",
+      "tracking_no": "ZT7782100645",
+      "timeline": [
+        {
+          "time": "2026-06-11 08:00",
+          "desc": "商家已发货"
+        },
+        {
+          "time": "2026-06-13 12:30",
+          "desc": "已签收，签收人：门口代收"
+        }
+      ]
+    }
+  }
+]

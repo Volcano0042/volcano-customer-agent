@@ -1,0 +1,62 @@
+[
+  {
+    "user_id": "U10001",
+    "nickname": "追风的云",
+    "phone_tail": "3721",
+    "member_level": "黄金会员",
+    "points": 2680,
+    "coupons": [
+      {"title": "满 300 减 30 全场券", "expire_at": "2026-10-01"},
+      {"title": "数码配件 9 折券", "expire_at": "2026-09-30"}
+    ]
+  },
+  {
+    "user_id": "U10002",
+    "nickname": "芝士就是力量",
+    "phone_tail": "9084",
+    "member_level": "白银会员",
+    "points": 620,
+    "coupons": [
+      {"title": "美妆个护满 150 减 20", "expire_at": "2026-09-25"}
+    ]
+  },
+  {
+    "user_id": "U10003",
+    "nickname": "山月不知心底事",
+    "phone_tail": "2265",
+    "member_level": "铂金会员",
+    "points": 8800,
+    "coupons": [
+      {"title": "满 1000 减 100 全场券", "expire_at": "2026-10-15"},
+      {"title": "生鲜冷链 8.8 折券", "expire_at": "2026-09-28"}
+    ]
+  },
+  {
+    "user_id": "U10004",
+    "nickname": "代码写成诗",
+    "phone_tail": "5130",
+    "member_level": "黄金会员",
+    "points": 1520,
+    "coupons": [
+      {"title": "数码影音满 2000 减 200", "expire_at": "2026-10-10"}
+    ]
+  },
+  {
+    "user_id": "U10005",
+    "nickname": "火锅不加辣",
+    "phone_tail": "7428",
+    "member_level": "白银会员",
+    "points": 300,
+    "coupons": []
+  },
+  {
+    "user_id": "U10006",
+    "nickname": "早起的鸟儿",
+    "phone_tail": "6612",
+    "member_level": "白银会员",
+    "points": 45,
+    "coupons": [
+      {"title": "新人 10 元无门槛券", "expire_at": "2026-09-30"}
+    ]
+  }
+]

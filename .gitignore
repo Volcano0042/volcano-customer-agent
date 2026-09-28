@@ -1,0 +1,47 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venv-mac/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- 测试 / 覆盖率产物 ----
+.coverage
+coverage.xml
+htmlcov/
+
+# ---- 环境与密钥 ----
+.env
+# .env.local / .env.prod 等变体同样不能提交；.env.example 是模板，必须保留
+.env.*
+!.env.example
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ---- 临时 / 调试脚本与产物 ----
+# 注意：不要用 _*.py —— 会误伤 __init__.py（见 backend/__init__.py）
+_enhance_mmd.py
+backend/_check_bytes.py
+backend/_fix_degradation.py
+backend/_patch_getattr.py
+_*.txt
+_*.png
+_*.log
+*.log
+tmp_*
+temp_*
+check*.py
+fix_*.py
+insert_multi.py
+b64.txt
