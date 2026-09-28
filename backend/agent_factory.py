@@ -64,7 +64,6 @@ def build_customer_service_agent(
         state=state,
         # 跨会话用户记忆：注入「已知用户档案」并在回复后落盘
         middlewares=[
-            # 跨会话用户记忆：注入「已知用户档案」并在回复后落盘
             CustomerMemoryMiddleware(user_id=user_id),
             # 单轮 token 预算：超限即注入收尾提示并禁用工具，防止无限工具循环
             ReplyBudgetControlMiddleware(
@@ -80,22 +79,9 @@ def build_customer_service_agent(
 
 
 def build_permission_context() -> PermissionContext:
-    """构造权限策略：显式工具白名单。
+    """构造权限策略：显式工具白名单，清单之外一律不静默执行。
 
-    这里刻意避开原实现使用的 ``BYPASS``：``BYPASS`` 会连**安全类 ASK 也一并跳过**
-    （见 ``PermissionEngine._check_bypass``），等价于没有防护。
-
-    但也不能简单地换成 ``DONT_ASK``。实测结论：``FunctionTool`` 对**所有**自定义
-    工具都返回 ASK（"Custom function tools must be explicitly allowed"），
-    只有只读调用能靠"只读快路径"提前放行；而 ``DONT_ASK`` 会在工具自身检查那一步
-    就把 ASK 转成 DENY，**根本走不到白名单** —— 结果是「加购物车」「申请退款」这类
-    写操作全被拒，业务直接残废。
-
-    ``DEFAULT`` 的求值顺序才是可用的：工具返回的普通 ASK 会继续往下走到白名单
-    （第 5 步），命中的放行；未被白名单命中的才回落到 ASK 请用户确认。同时
-    ``DEFAULT`` 不会跳过 ``bypass_immune`` 的安全类 ASK，护栏仍在。
-
-    最终形态：**业务工具按清单放行，清单之外一律不静默执行**。
+    别改成 ``DONT_ASK``：自定义工具返回的 ASK 会被它转成 DENY，写操作全被拒。
     """
     return PermissionContext(
         mode=PermissionMode.DEFAULT,
@@ -114,14 +100,9 @@ def build_permission_context() -> PermissionContext:
 
 
 def _build_context_config(settings: Settings) -> ContextConfig:
-    """构造上下文策略。
+    """构造上下文策略：显式声明而不依赖 SDK 默认值。
 
-    显式声明而非依赖 SDK 默认值，原因有二：
-
-    1. 默认 ``trigger_ratio=0.8`` 与 ``tool_result_limit=50000`` 面向通用场景，
-       对客服（单轮工具结果小、对话轮次多）偏宽松，长会话容易贴到窗口上限。
-    2. 离线规则模型无法输出结构化摘要，压缩必然走"截断最旧上下文"这条兜底路径。
-       这里显式打开该兜底，让行为可预期、可测试，而不是靠 SDK 默认值默默生效。
+    离线模型无法输出结构化摘要，压缩走"截断最旧上下文"兜底，显式打开让行为可预期。
     """
     return ContextConfig(
         trigger_ratio=settings.context_trigger_ratio,

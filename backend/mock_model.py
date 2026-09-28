@@ -32,12 +32,10 @@ _CJK_RE = re.compile(r"[　-〿㐀-䶿一-鿿＀-￯]")
 
 
 def _estimate_tokens(text: str) -> int:
-    """按字符构成估算 token 数（离线模型的用量上报用）。
+    """按字符构成估算 token 数：中文约 1 字 1 token，其余 4 字符 1 token。
 
-    真实模型会返回服务端的精确用量，离线模型没有服务端，只能估：
-    中文约 1 字 1 token，其余按 4 字符 1 token。仅用于让
-    ``ReplyBudgetControlMiddleware`` 在无 Key 环境下也能生效，
-    不追求与任何具体分词器对齐。
+    离线模型没有服务端用量可上报，只为让 ReplyBudgetControlMiddleware 在无 Key
+    环境下也能生效，不追求与具体分词器对齐。
     """
     cjk = len(_CJK_RE.findall(text))
     return cjk + max(0, len(text) - cjk) // 4

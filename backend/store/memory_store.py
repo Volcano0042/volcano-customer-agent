@@ -1,29 +1,7 @@
 # -*- coding: utf-8 -*-
-"""跨会话用户记忆存储。
+"""跨会话用户记忆存储，落 ``backend/data/memory.json``，单文件 JSON、零外部依赖。
 
-与 ``mock_store.py`` 分开是有意为之：``mock_store`` 是 README 里写明的
-「接真实中台时的替换点」，而用户记忆属于 Agent 自身状态 ——
-接入真实中台时不该被一起换掉，所以它单独成模块。
-
-存储形态与项目其余数据保持一致：单文件 JSON + 文件锁，零外部依赖。
-
-    backend/data/memory.json
-    {
-      "3721": {
-        "phone_tail": "3721",
-        "user_id": "U10001",
-        "nickname": "追风的云",
-        "member_level": "黄金会员",
-        "points": 2680,
-        "order_ids": ["SO20260810001"],
-        "turns": 3,
-        "first_seen_at": "2026-09-28 21:50",
-        "updated_at": "2026-09-28 22:05"
-      }
-    }
-
-身份键优先用手机号后四位（项目里购物车、订单查询都以它为实际主键）；
-若客户端带登录态 ``user_id``，则由 ``UserStore`` 解析出手机号后四位后再落库。
+身份键为手机号后四位；带登录态 ``user_id`` 时先经 ``UserStore`` 解析出尾号再落库。
 """
 import asyncio
 import json
@@ -75,11 +53,7 @@ class UserMemoryStore:
         return await _read()
 
     async def upsert(self, key: str, **fields: Any) -> dict:
-        """写入 / 合并一条记忆。
-
-        合并语义：只覆盖本次提供的字段；``order_ids`` 做去重合并并保留最近
-        ``_MAX_ORDER_IDS`` 条；``first_seen_at`` 只在首次写入时设置。
-        """
+        """写入 / 合并一条记忆：只覆盖本次提供的字段，order_ids 去重后保留最近 10 条。"""
         if not key:
             raise ValueError("记忆键不能为空")
         key = str(key)

@@ -4,9 +4,8 @@
 toC 场景特点：并发用户多、单会话生命周期短、需要按用户隔离上下文。
 每个会话持有独立的 Agent（其 AgentState.context 即该用户的对话历史）。
 
-注：本模块定义了名为 ``list`` 的方法，会在类命名空间内遮蔽内置 ``list``。
-用 ``from __future__ import annotations`` 让注解惰性求值，避免 ``list[X]``
-这类注解在类体求值时踩到遮蔽。
+注：``from __future__ import annotations`` 不可删 —— 本模块的 ``list`` 方法会在类
+命名空间遮蔽内置 ``list``，只注解惰性求值才能让 ``list[X]`` 不在类体求值时炸。
 """
 from __future__ import annotations
 
@@ -36,11 +35,9 @@ class SessionRuntime:
 
 
 class SessionManager:
-    """会话注册表。
+    """会话注册表：实例常驻内存，AgentState 另存档到磁盘以便重启后恢复。
 
-    会话实例常驻进程内存（读得快），同时把 ``AgentState`` 存档到磁盘
-    （``SessionStore``），使会话在进程重启后仍可恢复 —— 存档是可选旁路，
-    存储不可用时不影响对话。
+    存档是可选旁路，存储不可用时不影响对话。
     """
 
     def __init__(

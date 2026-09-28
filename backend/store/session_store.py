@@ -1,11 +1,7 @@
 # -*- coding: utf-8 -*-
 """会话状态持久化：让会话在进程重启后仍可恢复。
 
-AgentScope 2.0 的 ``AgentState`` 是纯 pydantic 模型，``model_dump_json()`` /
-``model_validate_json()`` 可直接往返，所以这里不需要任何额外依赖 ——
-与项目「clone 即可跑」的定位一致。
-
-落盘位置：``backend/data/sessions/{session_id}.json``
+落 ``backend/data/sessions/{session_id}.json``。
 """
 from __future__ import annotations
 
@@ -19,11 +15,9 @@ from .mock_store import now_cn
 
 _SESSIONS_DIR = Path(__file__).resolve().parent.parent / "data" / "sessions"
 
-# session_id 来自客户端，会被拼进文件路径，因此必须严格校验以防目录穿越。
-# 本服务生成的 id 形如 sess_<12位十六进制>，这里放宽到通用安全字符集。
+# session_id 来自客户端且会拼进文件路径，必须校验以防目录穿越
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-# 默认最多保留的会话存档数
 DEFAULT_MAX_RECORDS = 500
 
 
@@ -60,8 +54,7 @@ class SessionStore:
             self._dir.mkdir(parents=True, exist_ok=True)
             payload = {
                 "meta": {**meta, "session_id": session_id, "saved_at": now_cn()},
-                # AgentState 自带 JSON 往返能力，thinking / tool_call / tool_result
-                # / hint 等各类内容块都能原样保留
+                # AgentState 自带 JSON 往返，各类内容块都能原样保留
                 "state": json.loads(state.model_dump_json()),
             }
             path.write_text(

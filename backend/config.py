@@ -29,28 +29,17 @@ class Settings:
     port: int = 8000
     session_ttl_minutes: int = 120
     max_sessions: int = 200
-
-    # 智能体对外展示名称
     agent_name: str = "小V"
-    # 品牌名（会写进系统提示词）
     brand_name: str = "Volcano"
 
     # ---- 上下文与推理轮次策略 ----
-    # 上下文占模型窗口的比例超过该值时触发压缩（SDK 上限 0.9）
-    context_trigger_ratio: float = 0.7
-    # 压缩后保留的上下文比例，必须小于 trigger_ratio
-    context_reserve_ratio: float = 0.2
-    # 压缩阈值之前的预警缓冲区，必须小于 trigger_ratio
-    context_buffer_ratio: float = 0.15
-    # 单条工具结果的 token 上限，超出即截断，防止单次查询撑爆上下文
-    tool_result_limit: int = 4000
-    # 一轮回复内最多的"推理-行动"轮次（SDK 默认 50，客服场景过大）
-    max_react_iters: int = 12
-    # 单轮回复的加权 token 预算（输入+输出）。超出后中间件会注入收尾提示
-    # 并把 tool_choice 置为 none，逼模型用现有信息作答，避免失控烧钱。
-    reply_token_budget: int = 32000
-    # 输出 token 的权重（通常比输入贵），用于加权计算预算消耗
-    reply_output_token_weight: float = 2.0
+    context_trigger_ratio: float = 0.7       # 超过窗口该比例触发压缩（上限 0.9）
+    context_reserve_ratio: float = 0.2       # 压缩后保留比例，须小于 trigger
+    context_buffer_ratio: float = 0.15       # 触发前预警缓冲，须小于 trigger
+    tool_result_limit: int = 4000            # 单条工具结果 token 上限
+    max_react_iters: int = 12                # 单轮最多推理-行动轮次（默认 50）
+    reply_token_budget: int = 32000          # 单轮加权 token 预算，超出即收尾
+    reply_output_token_weight: float = 2.0   # 输出 token 权重
 
     # ---- 服务降级配置 ----
     degradation_enabled: bool = True

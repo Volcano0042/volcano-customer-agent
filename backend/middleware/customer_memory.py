@@ -1,16 +1,7 @@
 # -*- coding: utf-8 -*-
-"""跨会话用户记忆中间件。
+"""跨会话用户记忆中间件：on_system_prompt 注入已知档案，on_reply 抽取事实落盘。
 
-挂到 AgentScope 2.0 的 ``MiddlewareBase`` 上，实现两件事：
-
-- ``on_system_prompt``：把「已知用户档案」注入系统提示词，让 Agent 在新会话里
-  也能认出回头客。该钩子在每次模型调用前执行，因此记忆是逐轮新鲜的。
-- ``on_reply``：一轮回复结束后，从上下文里**确定性**抽取事实并落盘。
-
-为什么不用官方 ``AgenticMemoryMiddleware``：它依赖模型主动调用文件工具来写记忆、
-依赖 ``generate_structured_output`` 来检索记忆，而本项目的离线规则模型两者都
-不做（``OfflineChatModel`` 直接忽略 Toolkit 与 tools 参数）。本中间件的抽取与
-读取都是纯代码逻辑，因此**离线模型下同样有效**，不牺牲「clone 即可跑」的卖点。
+读写都是纯代码逻辑，不依赖模型决策，故离线模型下同样有效。
 """
 from typing import Any
 
@@ -54,8 +45,7 @@ class CustomerMemoryMiddleware(MiddlewareBase):
     """用户长期记忆：跨会话记住回头客。
 
     Args:
-        user_id: 登录态用户标识（如 U10001）；空表示匿名会话，此时身份
-            待 Agent 在对话中问到手机号后四位后再建立。
+        user_id: 登录态用户标识（如 U10001）；空表示匿名会话。
         store: 记忆存储，默认全局单例（测试可注入临时实例）。
     """
 
@@ -106,11 +96,7 @@ class CustomerMemoryMiddleware(MiddlewareBase):
 
     @staticmethod
     def _extract_facts(msgs: list[Msg]) -> dict:
-        """从上下文中确定性抽取可长期保留的用户事实。
-
-        身份取自工具**调用参数**（``query_user_profile`` 等工具的 phone_tail），
-        业务事实取自工具**结果**，两者按 block id 配对。
-        """
+        """从上下文中抽取可长期保留的用户事实：身份取自工具入参，业务事实取自工具结果。"""
         calls: dict[str, str] = {}
         facts: dict[str, Any] = {}
         order_ids: list[str] = []
@@ -158,11 +144,7 @@ class CustomerMemoryMiddleware(MiddlewareBase):
         return current_prompt + self._render(record)
 
     async def on_reply(self, agent, input_kwargs: dict, next_handler):
-        """一轮回复结束后抽取事实并落盘。
-
-        放在回复之后而非之前：此时工具结果才刚写入上下文。
-        抽取是纯代码逻辑，不依赖模型决策，故离线模型下同样生效。
-        """
+        """一轮回复结束后抽取事实并落盘（此时工具结果才刚写入上下文）。"""
         async for evt in next_handler():
             yield evt
 

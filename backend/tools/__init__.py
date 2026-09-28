@@ -19,10 +19,7 @@ from .shop import (
 )
 
 
-# 工具清单：(实现函数, 是否只读)。这是工具集的唯一数据源 —— Toolkit 与
-# 权限白名单都从这里派生，避免两处各写一份而悄悄漂移。
-# 只读工具会被 AgentScope 的权限引擎自动放行；非只读工具必须显式列入白名单
-# 才会被放行（见 agent_factory.build_permission_context）。
+# 工具清单：(实现函数, 是否只读)，是 Toolkit 与权限白名单的唯一数据源
 TOOL_SPECS: tuple[tuple[Any, bool], ...] = (
     # ---- 只读：查订单 / 物流 / 资料 / 政策 / 商品 ----
     (query_order, True),

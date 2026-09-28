@@ -16,9 +16,8 @@ class ChatRequest(BaseModel):
     user_id: str | None = Field(
         default=None,
         description=(
-            "用户标识（如登录态下的 U10001）。用于跨会话记忆："
-            "带上它，新会话第一轮就能认出回头客；不传则退化为匿名会话，"
-            "待 Agent 问到手机号后四位后再建立身份。"
+            "用户标识（如登录态下的 U10001）。带上它，新会话第一轮就能认出回头客；"
+            "不传则为匿名会话，待 Agent 问到手机号后四位后再建立身份。"
         ),
     )
 
