@@ -85,9 +85,12 @@ class OrderStore:
         """创建一笔新订单（默认待付款，无物流）。返回订单字典。"""
         async with _lock_for(self._filename):
             orders = await _read_json(self._filename)
+            # 订单号形如 SO + YYYYMMDD + 3 位序号（如 SO20260810001）。
+            # 取序号必须只吃尾部那 3 位：早先用 (\d+)$ 会把整个 YYYYMMDDNNN
+            # 当成序号，新单号于是变成 SO<今天><旧单号全部数字> 这种畸形串。
             nums = []
             for o in orders:
-                m = re.search(r"(\d+)\s*$", str(o.get("order_id", "")))
+                m = re.search(r"SO\d{8}(\d{3})\s*$", str(o.get("order_id", "")), re.I)
                 if m:
                     nums.append(int(m.group(1)))
             seq = 1 + max(nums, default=0)

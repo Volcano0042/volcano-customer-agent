@@ -2,6 +2,7 @@
 """端到端流程测试（使用 AgentScope 离线规则模型，无网络依赖）。"""
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -533,6 +534,102 @@ async def test_reply_budget_stops_runaway_loop():
     records = tight.state.middle_context.get("ReplyBudgetControlMiddleware") or {}
     assert records, tight.state.middle_context
     assert all(cost > 0 for cost in records.values())
+
+
+# ---------------- 上下文实体继承层 ----------------
+
+def test_extract_entities_pulls_order_and_phone():
+    """本轮抽取：订单号里的数字不得被误读成手机号后四位。"""
+    from backend.context import extract_entities
+
+    ex = extract_entities("订单 SO20260810001 要退款，手机号后四位 3721")
+    assert ex["order_id"] == "SO20260810001"
+    assert ex["phone_tail"] == "3721"
+    assert ex["reason"] == "用户申请退款"
+
+    # 只给订单号时不应凭空造出手机号（SO20260810001 内含 8 位数字）
+    only_order = extract_entities("查一下 SO20260810001")
+    assert only_order["order_id"] == "SO20260810001"
+    assert only_order["phone_tail"] == ""
+
+
+def test_history_entities_ignores_tool_result_numbers():
+    """回归：快递员脱敏手机号 / 积分这些**工具结果里的数字**不得被继承为用户手机号。
+
+    修复前 ``_history_entities`` 把工具结果原文也纳入手机号扫描，且不剔除
+    ``138****6621`` 这类脱敏串，于是 6621 被当成用户尾号；积分 2680 同理。
+    这里直接对脱敏串与工具结果做单元级断言。
+    """
+    from agentscope.message import (
+        AssistantMsg,
+        TextBlock,
+        ToolCallBlock,
+        ToolResultBlock,
+        UserMsg,
+    )
+
+    from backend.context import history_entities
+
+    call = ToolCallBlock(
+        id="c1", name="track_logistics", input='{"order_id": "SO20260810001"}',
+    )
+    result = ToolResultBlock(
+        id="c1", name="track_logistics",
+        output=[TextBlock(text='{"company": "火山速运", "courier": "赵师傅 138****6621"}')],
+    )
+    msgs = [
+        AssistantMsg(name="客服", content=[call, result]),
+        # 末尾必须有 user 消息，否则 boundary 落在列表末尾、什么都扫不到
+        UserMsg(name="用户", content=[TextBlock(text="那物流呢")]),
+    ]
+
+    ents = history_entities(msgs)
+    assert ents["phone_tail"] != "6621", ents
+    assert ents["phone_tail"] == "", ents
+    assert ents["order_id"] == "SO20260810001"   # 订单号仍应正常继承
+
+
+async def test_regression_courier_phone_not_used_as_user_tail():
+    """回归（端到端）：查完物流再追问，不得拿快递员尾号去查库。"""
+    from backend.context import history_entities
+
+    agent = _make_agent("sess_reg_courier")
+    tools1, _ = await _collect_reply(agent, "帮我查一下订单 SO20260810001 的物流")
+    assert "track_logistics" in tools1
+
+    tools2, reply2 = await _collect_reply(agent, "那物流呢")
+    # 症状：修复前这里会去查"手机号后四位 6621"，回复以「未找到」开头
+    assert "未找到" not in reply2, reply2[:200]
+    assert "6621" not in history_entities(agent.state.context)["phone_tail"]
+    # 仍应正常拿到物流
+    assert "track_logistics" in tools2
+
+
+async def test_regression_points_not_used_as_user_tail():
+    """回归（端到端）：查完会员积分再追问，不得拿积分值当手机号后四位。"""
+    from backend.context import history_entities
+
+    agent = _make_agent("sess_reg_points")
+    tools1, _ = await _collect_reply(agent, "手机号后四位 3721，我的会员等级")
+    assert "query_user_profile" in tools1
+
+    tools2, reply2 = await _collect_reply(agent, "那物流呢")
+    assert "未找到" not in reply2, reply2[:200]
+
+    ents = history_entities(agent.state.context)
+    assert ents["phone_tail"] == "3721", ents   # 用户自己报的尾号，而不是积分 2680
+
+
+async def test_new_order_id_keeps_date_plus_sequence_format():
+    """回归：新订单号必须是 SO+YYYYMMDD+3 位序号，不能把旧单号整串拼进来。"""
+    from backend.store.mock_store import order_store
+
+    order = await order_store.create(
+        user_id="U10001", phone_tail="3721", items=[],
+        amount=1.0, address="测试地址",
+    )
+    # 修复前会生成 SO2026092820260910012 这种 20 位畸形串
+    assert re.fullmatch(r"SO\d{8}\d{3}", order["order_id"]), order["order_id"]
 
 
 # ---------------- 跨会话用户记忆 ----------------

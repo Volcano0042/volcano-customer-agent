@@ -23,13 +23,7 @@ from agentscope.formatter import OpenAIChatFormatter
 from agentscope.message import TextBlock, ThinkingBlock, ToolCallBlock
 from agentscope._utils._common import _generate_id
 
-_ORDER_RE = re.compile(r"SO\d{8,}", re.IGNORECASE)
-_PHONE_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
-_SKU_RE = re.compile(r"P\d{3,4}", re.IGNORECASE)
-
-_BARE_PHONE_RE = re.compile(r"^\s*(\d{4})\s*$")
-_ACK_WORDS = ("好的", "好", "嗯", "嗯嗯", "确认", "是的", "对", "行", "可以",
-              "就这样", "没问题", "ok", "OK")
+from .context import ORDER_RE, PHONE_RE, resolve_turn
 
 _THINK = "思考过程："
 
@@ -58,8 +52,6 @@ def _usage(input_tokens: int, output_text: str) -> ChatUsage:
     )
 
 
-
-
 def _tool_result_after(msgs: list[Msg]) -> list[tuple[str, dict]]:
     """扫描最后一条用户消息之后的所有工具结果，返回 (工具名, 解析后的 dict)。"""
     idx = -1
@@ -80,114 +72,6 @@ def _tool_result_after(msgs: list[Msg]) -> list[tuple[str, dict]]:
                 parsed = {"_raw": output}
             results.append((block.name, parsed))
     return results
-
-
-def _extract(text: str) -> dict[str, str]:
-    """从用户文本中提取订单号 / 手机号后四位 / 退款原因。"""
-    order_match = _ORDER_RE.search(text)
-    order_id = order_match.group(0).upper() if order_match else ""
-    masked = _ORDER_RE.sub("", text)
-    tail_match = _PHONE_RE.search(masked)
-    phone_tail = tail_match.group(1) if tail_match else ""
-    reason = "用户申请退款"
-    for kw, r in (
-        ("破损", "商品破损/质量问题"),
-        ("损坏", "商品损坏/质量问题"),
-        ("坏了", "商品损坏"),
-        ("质量", "质量问题"),
-        ("拍错", "拍错了"),
-        ("买错", "买错了"),
-        ("下错", "下错单了"),
-        ("不想要", "不想要了"),
-        ("不喜欢", "不合适/不喜欢"),
-        ("七天", "七天无理由退货"),
-    ):
-        if kw in text:
-            reason = r
-            break
-    sku_match = _SKU_RE.search(text)
-    sku = sku_match.group(0).upper() if sku_match else ""
-    return {"order_id": order_id, "phone_tail": phone_tail, "reason": reason, "sku": sku}
-
-
-def _history_entities(messages: list[Msg]) -> dict[str, str]:
-    """从更早的对话上下文中回收最近提到的订单号 / 手机号后四位 / 货号（指代消解）。
-
-    扫描最后一条用户消息之前的消息文本、工具入参与工具结果，
-    让"帮我退了""那物流呢"这类指代上文的短句能继承实体，实现多轮对话。
-    """
-    boundary = len(messages)
-    for i in range(len(messages) - 1, -1, -1):
-        if messages[i].role == "user":
-            boundary = i
-            break
-    parts: list[str] = []
-    for m in messages[:boundary]:
-        parts.append(m.get_text_content() or "")
-        for block in m.get_content_blocks("tool_call"):
-            parts.append(str(getattr(block, "input", "") or ""))
-        for block in m.get_content_blocks("tool_result"):
-            output = getattr(block, "output", "")
-            if isinstance(output, list):
-                output = " ".join(getattr(x, "text", "") for x in output)
-            parts.append(str(output))
-    blob = "\n".join(parts)
-
-    orders = _ORDER_RE.findall(blob)
-    skus = _SKU_RE.findall(blob)
-    # 剔除订单号 / 货号 / 金额小数，避免干扰手机号匹配
-    masked = _ORDER_RE.sub(" ", blob)
-    masked = _SKU_RE.sub(" ", masked)
-    masked = re.sub(r"\d+\.\d+", " ", masked)
-    phones = [
-        p for p in _PHONE_RE.findall(masked)
-        if not re.fullmatch(r"(19|20)\d{2}", p)   # 排除时间戳里的年份
-    ]
-    return {
-        "order_id": orders[-1].upper() if orders else "",
-        "phone_tail": phones[-1] if phones else "",
-        "sku": skus[-1].upper() if skus else "",
-    }
-
-
-def _pending_intent(messages: list[Msg]) -> str:
-    """从上一条客服回复里识别"挂起的问题"，供短句 / 裸数字回答继承意图。"""
-    boundary = len(messages)
-    for i in range(len(messages) - 1, -1, -1):
-        if messages[i].role == "user":
-            boundary = i
-            break
-    for m in reversed(messages[:boundary]):
-        if m.role != "assistant":
-            continue
-        text = m.get_text_content() or ""
-        if not text:
-            continue
-        if "确认退款" in text or ("退款" in text and "确认" in text):
-            return "refund"
-        if "下单" in text:
-            return "checkout"
-        if "购物车" in text:
-            return "cart"
-        if "手机号" in text or "订单号" in text or "定位订单" in text:
-            return "order"
-        if "物流" in text or "快递" in text:
-            return "logistics"
-        return ""
-    return ""
-
-
-def _resolve_followup(intent: str, user_text: str, messages: list[Msg]) -> str:
-    """多轮对话的意图修补：裸数字回答 / 简短确认映射到上一轮挂起的意图。"""
-    text = (user_text or "").strip()
-    if _BARE_PHONE_RE.fullmatch(text):
-        pending = _pending_intent(messages)
-        return pending or intent
-    if intent in ("fallback", "greeting"):
-        ack = text.strip("。！!？?~～ ")
-        if ack in _ACK_WORDS and _pending_intent(messages) == "refund":
-            return "refund"
-    return intent
 
 
 def _intent(text: str) -> str:
@@ -218,8 +102,8 @@ def _intent(text: str) -> str:
         return "cart"
     if any(k in text for k in ("推荐", "想买", "要买", "买个", "买点", "买什么", "有什么推荐", "商品目录", "看看有什么", "有哪些商品", "介绍一下", "挑一个", "帮选")):
         return "shop"
-    if "订单" in text or _ORDER_RE.search(text) or (
-        _PHONE_RE.search(text) and "订单" in text
+    if "订单" in text or ORDER_RE.search(text) or (
+        PHONE_RE.search(text) and "订单" in text
     ):
         return "order"
     if any(k in text for k in ("会员", "积分", "优惠券", "升级", "权益", "等级")):
@@ -278,19 +162,9 @@ class OfflineChatModel(ChatModelBase):
 
         results = _tool_result_after(messages)
         intent = _intent(user_text)
-        ex = _extract(user_text)
-        intent = _resolve_followup(intent, user_text, messages)
-
-        # 多轮对话：当前消息缺实体时，继承上下文里最近提到的订单号/手机号/货号
-        current_order = ex.get("order_id")
-        history_ex = _history_entities(messages)
-        for key in ("order_id", "phone_tail", "sku"):
-            if not ex.get(key) and history_ex.get(key):
-                ex[key] = history_ex[key]
-        # 特例：追问物流而订单号是继承来的、且手机位可用时，
-        # 优先走"手机号定位在途订单"的语义路径，避免误选历史列表里的尾单。
-        if intent == "logistics" and not current_order and ex.get("phone_tail"):
-            ex["order_id"] = ""
+        # 实体继承与意图修补交给模型无关的上下文层（backend/context.py）：
+        # 本轮抽取 + 历史回收 + 追问特例，一次算完
+        intent, ex = resolve_turn(user_text, messages, intent)
 
         action = self._decide(intent, ex, results, user_text)
 
