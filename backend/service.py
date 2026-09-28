@@ -15,6 +15,7 @@ from agentscope.event import (
     ToolCallStartEvent,
     ToolResultEndEvent,
     ToolResultTextDeltaEvent,
+    ModelCallEndEvent,
     HintBlockEvent,
     RequireUserConfirmEvent,
 )
@@ -57,6 +58,9 @@ class ChatStreamer:
         self._ttft_ms: float | None = None   # 首个模型 token 到达时间
         self._tool_rounds: int = 0
         self._agent_span = None             # agent.reply_stream 阶段 span
+        # 本轮的模型 token 用量（真实模型为服务端值，离线模型为估算值）
+        self._tokens_in: int = 0
+        self._tokens_out: int = 0
 
     async def run(
         self,
@@ -169,7 +173,12 @@ class ChatStreamer:
         elif isinstance(evt, ReplyEndEvent):
             out.append(_sse({
                 "event": "done",
-                "data": {"finished_reason": evt.finished_reason},
+                "data": {
+                    "finished_reason": evt.finished_reason,
+                    # 本轮 token 用量，供前端/调试平台展示成本
+                    "tokens_in": self._tokens_in,
+                    "tokens_out": self._tokens_out,
+                },
             }))
         elif isinstance(evt, HintBlockEvent):
             hint = evt.hint
@@ -223,6 +232,13 @@ class ChatStreamer:
 
     def _instrument(self, evt: AgentEvent) -> None:
         """把 AgentScope 事件翻成 span 开合动作（不做 SSE 翻译）。"""
+        # token 用量与追踪无关，即使没有 recorder 也要累计
+        if isinstance(evt, ModelCallEndEvent):
+            self._tokens_in += max(0, evt.input_tokens)
+            self._tokens_out += max(0, evt.output_tokens)
+            if self._recorder is not None:
+                self._recorder.add_usage(evt.input_tokens, evt.output_tokens)
+
         rec = self._recorder
         if rec is None:
             return
@@ -318,14 +334,17 @@ async def stream_chat(
     settings: Settings,
     session_id: str,
     message: str,
+    user_id: str = "",
 ) -> AsyncGenerator[str, None]:
     """流式处理一条用户消息，产出 SSE 文本。"""
-    runtime = await manager.get_or_create(session_id)
+    runtime = await manager.get_or_create(session_id, user_id=user_id)
     async with runtime.lock:
         streamer = ChatStreamer(settings, runtime.session_id)
         async for chunk in streamer.run(runtime.agent, message):
             yield chunk
     manager._update_preview(runtime)
+    # 每轮结束把 AgentState 存档，使会话可跨进程重启恢复
+    await manager.persist(runtime)
 
 
 def build_history(runtime) -> list[dict]:

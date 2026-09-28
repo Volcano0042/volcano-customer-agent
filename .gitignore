@@ -29,6 +29,12 @@ htmlcov/
 *.swp
 .DS_Store
 
+# ---- 运行时状态 ----
+# 跨会话用户记忆：运行期生成，不属于演示数据（backend/data/ 下其余 JSON 是演示数据，需提交）
+backend/data/memory.json
+# 会话存档（AgentState 序列化结果）
+backend/data/sessions/
+
 # ---- 临时 / 调试脚本与产物 ----
 # 注意：不要用 _*.py —— 会误伤 __init__.py（见 backend/__init__.py）
 _enhance_mmd.py

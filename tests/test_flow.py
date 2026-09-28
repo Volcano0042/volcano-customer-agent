@@ -10,17 +10,50 @@ import pytest
 _ROOT = Path(__file__).resolve().parent.parent
 _DATA = _ROOT / "backend" / "data"
 
+# 需要备份还原的业务数据文件
+_DATA_FILES = ("orders.json", "tickets.json", "faq.json", "users.json", "cart.json", "products.json")
+
 
 @pytest.fixture(autouse=True)
 def _preserve_data(tmp_path):
-    """备份并在结束时还原 JSON 数据，避免测试污染演示数据。"""
+    """备份并在结束时还原 JSON 数据，避免测试污染演示数据。
+
+    memory.json（跨会话用户记忆）也一并隔离：测试前清空、结束后还原原状，
+    否则上一条用例记住的用户档案会串到下一条，让结果不可复现。
+    """
     backup = tmp_path / "data_bak"
     backup.mkdir()
-    for name in ("orders.json", "tickets.json", "faq.json", "users.json", "cart.json", "products.json"):
+    for name in _DATA_FILES:
         shutil.copy(_DATA / name, backup / name)
+
+    memory = _DATA / "memory.json"
+    memory_backup = backup / "memory.json"
+    had_memory = memory.exists()
+    if had_memory:
+        shutil.copy(memory, memory_backup)
+    memory.write_text("{}", encoding="utf-8")
+
+    # 会话存档：HTTP 用例会走真实 server，persist 会把 AgentState 写到
+    # backend/data/sessions/。记录测试前的文件，结束后删掉新增的。
+    sessions_dir = _DATA / "sessions"
+    before = (
+        {p.name for p in sessions_dir.glob("*.json")}
+        if sessions_dir.exists()
+        else set()
+    )
+
     yield
-    for name in ("orders.json", "tickets.json", "faq.json", "users.json", "cart.json", "products.json"):
+
+    for name in _DATA_FILES:
         shutil.copy(backup / name, _DATA / name)
+    if had_memory:
+        shutil.copy(memory_backup, memory)
+    elif memory.exists():
+        memory.unlink()
+    if sessions_dir.exists():
+        for path in sessions_dir.glob("*.json"):
+            if path.name not in before:
+                path.unlink()
 
 
 def _make_agent(session_id: str = "test_sess"):
@@ -173,6 +206,16 @@ async def test_chat_api_sse():
         assert "event: delta" in body
         assert "event: done" in body
 
+        # done 事件带上本轮 token 用量（离线模型也会估算上报）
+        done = [
+            json.loads(line[6:])
+            for line in body.splitlines()
+            if line.startswith("data: ") and '"tokens_in"' in line
+        ]
+        assert done, body[-500:]
+        assert done[-1]["tokens_in"] > 0
+        assert done[-1]["tokens_out"] > 0
+
 
 async def test_debug_api_trace_pipeline():
     import httpx
@@ -283,3 +326,334 @@ async def test_shop_price_filter_no_result():
     assert "300" in reply
     assert "实在" not in reply  # mock 不应假装存在
     assert ("P1001" in reply)  # 推荐最接近的耳机
+
+
+# ---------------- 上下文策略 ----------------
+
+def test_context_policy_from_settings():
+    """上下文策略由配置驱动，而不是依赖 SDK 默认值。"""
+    os.environ["MODEL_PROVIDER"] = "mock"
+    from backend.config import get_settings
+    from backend.agent_factory import _build_context_config
+
+    settings = get_settings()
+    cc = _build_context_config(settings)
+
+    assert cc.trigger_ratio == settings.context_trigger_ratio
+    assert cc.reserve_ratio == settings.context_reserve_ratio
+    assert cc.context_buffer_ratio == settings.context_buffer_ratio
+    assert cc.tool_result_limit == settings.tool_result_limit
+    # 离线模型无法生成结构化摘要，必须显式打开截断兜底
+    assert cc.compression_fallback_to_truncation is True
+    # SDK 约束：reserve / buffer 都必须小于 trigger，否则构造 Agent 时报错
+    assert cc.reserve_ratio < cc.trigger_ratio
+    assert cc.context_buffer_ratio < cc.trigger_ratio
+    # 与 SDK 默认值不同，证明确实覆盖了默认策略
+    assert cc.trigger_ratio != 0.8 or cc.tool_result_limit != 50000
+
+
+def test_react_iters_bounded():
+    """一轮回复的推理轮次上限由配置控制（SDK 默认 50，客服场景过大）。"""
+    agent = _make_agent("sess_react_iters")
+    assert agent.react_config.max_iters == 12
+    assert agent.react_config.max_iters < 50
+
+
+async def test_long_conversation_stays_bounded():
+    """长对话不会让上下文无限增长：超出窗口后走截断兜底，且仍能正常回复。
+
+    把模型窗口调小以快速触发压缩阈值，否则需要灌入数十 KB 文本。
+    """
+    os.environ["MODEL_PROVIDER"] = "mock"
+    from backend.config import get_settings
+    from backend.agent_factory import build_customer_service_agent
+    from backend.mock_model import OfflineChatModel
+
+    model = OfflineChatModel()
+    model.context_size = 6000  # 人为压小窗口
+    agent = build_customer_service_agent(
+        get_settings(), "sess_bounded", model=model,
+    )
+
+    turns = 8
+    peak = 0
+    for i in range(turns):
+        # _collect_reply 内部已断言 finished_reason == "completed"
+        await _collect_reply(agent, f"第{i}轮：帮我查订单 SO20260810001 的物流")
+        peak = max(peak, len(agent.state.context))
+
+    # 若无任何上下文策略，8 轮会累积到 16 条消息（实测峰值 6）
+    assert peak < 2 * turns
+    # 触发过压缩兜底：离线模型无法生成结构化摘要，必然落到截断并留下占位说明
+    assert "truncated" in str(agent.state.summary)
+
+
+# ---------------- 权限与成本控制 ----------------
+
+def test_permission_is_allowlist_not_bypass():
+    """权限策略是「显式工具白名单」，而不是 BYPASS 全放行。"""
+    from agentscope.permission import PermissionMode
+
+    from backend.agent_factory import build_permission_context
+    from backend.tools import tool_names
+
+    ctx = build_permission_context()
+
+    # 不再是 BYPASS —— 那会连安全类 ASK 一起跳过
+    assert ctx.mode is not PermissionMode.BYPASS
+    # 白名单覆盖全部业务工具，且没有多余项
+    assert set(ctx.allow_rules) == set(tool_names())
+    assert len(ctx.allow_rules) >= 17
+
+
+async def test_permission_allows_write_tools_but_not_unknown_ones():
+    """写工具按白名单放行；白名单之外的工具不会被静默执行。
+
+    这是本策略的核心性质。曾经用过 BYPASS（全放行，无防护）和裸 DONT_ASK
+    （未列白即 DENY，写操作全废）—— 两者都被这一条用例挡住。
+    """
+    from agentscope.permission import PermissionBehavior, PermissionEngine
+    from agentscope.tool import FunctionTool
+
+    from backend.agent_factory import build_permission_context
+    from backend.tools import build_toolkit
+
+    ctx = build_permission_context()
+    engine = PermissionEngine(ctx)
+    tk = build_toolkit()
+
+    # 写类业务工具必须放行
+    for name in ("add_to_cart", "apply_refund", "place_order", "pay_order"):
+        tool = await tk.get_tool(name)
+        decision = await engine.check_permission(tool, {})
+        assert decision.behavior is PermissionBehavior.ALLOW, name
+
+    # 白名单之外的函数工具不得被静默放行（回落为 ASK，需用户确认）
+    async def _rogue() -> str:
+        """一个不在白名单里的工具。"""
+        return "should not run silently"
+
+    rogue = FunctionTool(_rogue)
+    decision = await engine.check_permission(rogue, {})
+    assert decision.behavior is PermissionBehavior.ASK
+    assert decision.behavior is not PermissionBehavior.ALLOW
+
+
+def test_reply_budget_wired_from_settings():
+    """单轮 token 预算取自配置，且中间件已挂到 Agent 上。"""
+    from agentscope.middleware import ReplyBudgetControlMiddleware
+
+    os.environ["MODEL_PROVIDER"] = "mock"
+    from backend.config import get_settings
+
+    agent = _make_agent("sess_budget_wired")
+    settings = get_settings()
+
+    # 中间件按实现的钩子被分发到不同的内部列表，这里去重后统一收集
+    found = {
+        id(m): m
+        for attr in dir(agent)
+        if attr.endswith("_middlewares")
+        for m in getattr(agent, attr)
+        if isinstance(m, ReplyBudgetControlMiddleware)
+    }
+    assert len(found) == 1
+    budget = next(iter(found.values()))
+    assert budget.token_budget == settings.reply_token_budget
+    assert budget.token_budget > 0
+
+
+async def test_offline_model_reports_usage_so_budget_can_bite():
+    """离线模型必须上报 token 用量，否则预算中间件在无 Key 环境下形同虚设。"""
+    from agentscope.event import ModelCallEndEvent
+    from agentscope.message import TextBlock, UserMsg
+
+    from backend.mock_model import OfflineChatModel
+
+    agent = _make_agent("sess_usage")
+    assert isinstance(agent.model, OfflineChatModel)
+
+    reported = []
+    async for evt in agent.reply_stream(
+        UserMsg(name="用户", content=[TextBlock(text="帮我查订单 SO20260810001 的物流")]),
+    ):
+        if isinstance(evt, ModelCallEndEvent):
+            reported.append((evt.input_tokens, evt.output_tokens))
+
+    assert reported, "未观察到 ModelCallEndEvent"
+    assert all(i > 0 and o > 0 for i, o in reported), reported
+
+
+async def test_reply_budget_stops_runaway_loop():
+    """预算超限时注入收尾提示并累计用量到 middle_context。"""
+    from agentscope.agent import Agent, ModelConfig, ReActConfig
+    from agentscope.middleware import ReplyBudgetControlMiddleware
+    from agentscope.state import AgentState
+
+    from backend.agent_factory import build_permission_context
+    from backend.config import get_settings
+    from backend.mock_model import OfflineChatModel
+    from backend.prompts import build_system_prompt
+    from backend.tools import build_toolkit
+
+    settings = get_settings()
+
+    def _agent(budget: int) -> Agent:
+        return Agent(
+            name=settings.agent_name,
+            system_prompt=build_system_prompt(settings.agent_name, settings.brand_name),
+            model=OfflineChatModel(),
+            toolkit=build_toolkit(),
+            state=AgentState(
+                session_id="sess_runaway", context=[],
+                permission_context=build_permission_context(),
+            ),
+            middlewares=[ReplyBudgetControlMiddleware(token_budget=budget)],
+            model_config=ModelConfig(max_retries=2),
+            react_config=ReActConfig(max_iters=settings.max_react_iters),
+        )
+
+    def _hint_count(agent: Agent) -> int:
+        return sum(
+            len(msg.get_content_blocks("hint")) for msg in agent.state.context
+        )
+
+    question = "手机号后四位 3721，看下我最近的订单"
+
+    # 预算充足：不注入收尾提示
+    generous = _agent(settings.reply_token_budget)
+    await _collect_reply(generous, question)
+    baseline = _hint_count(generous)
+
+    # 预算极小：必须多注入一次收尾提示，并记录累计用量
+    tight = _agent(1)
+    await _collect_reply(tight, question)
+    assert _hint_count(tight) > baseline
+
+    records = tight.state.middle_context.get("ReplyBudgetControlMiddleware") or {}
+    assert records, tight.state.middle_context
+    assert all(cost > 0 for cost in records.values())
+
+
+# ---------------- 跨会话用户记忆 ----------------
+
+async def test_cross_session_memory():
+    """跨会话记忆：换一个新会话，凭同一 user_id 仍能认出回头客。
+
+    这是「记忆」区别于「会话历史」的关键 —— 会话是新的，Agent 实例是新的，
+    但用户档案被长期记忆带了过来。
+    """
+    os.environ["MODEL_PROVIDER"] = "mock"
+    from backend.config import get_settings
+    from backend.agent_factory import build_customer_service_agent
+    from backend.mock_model import OfflineChatModel
+    from backend.store.memory_store import user_memory_store
+
+    settings = get_settings()
+
+    # 会话 A：登录态 U10001，问出会员档案
+    agent_a = build_customer_service_agent(
+        settings, "sess_mem_a", model=OfflineChatModel(), user_id="U10001",
+    )
+    tools, _reply = await _collect_reply(agent_a, "手机号后四位 3721，查下我的会员等级和积分")
+    assert "query_user_profile" in tools
+
+    # 事实被确定性抽取并落盘（不依赖模型决策，故离线模型下同样生效）
+    record = await user_memory_store.get("3721")
+    assert record is not None
+    assert record["nickname"] == "追风的云"
+    assert record["member_level"] == "黄金会员"
+    assert record["user_id"] == "U10001"
+
+    # 会话 B：全新会话 + 全新 Agent + 全新上下文，仅凭 user_id
+    agent_b = build_customer_service_agent(
+        settings, "sess_mem_b", model=OfflineChatModel(), user_id="U10001",
+    )
+    assert agent_b.state.context == []          # 上下文确实是空的
+
+    prompt = await agent_b._get_system_prompt()  # noqa: SLF001 - 断言注入结果的最直接方式
+    assert "已知用户档案" in prompt
+    assert "追风的云" in prompt
+    assert "黄金会员" in prompt
+    # 记忆只用于个性化，业务数据仍须以工具为准
+    assert "必须调用工具核实" in prompt
+
+
+async def test_memory_learns_identity_without_login():
+    """匿名会话：没有 user_id 时，身份从对话中问到的手机号后四位建立。"""
+    os.environ["MODEL_PROVIDER"] = "mock"
+    from backend.config import get_settings
+    from backend.agent_factory import build_customer_service_agent
+    from backend.mock_model import OfflineChatModel
+    from backend.store.memory_store import user_memory_store
+
+    agent = build_customer_service_agent(
+        get_settings(), "sess_mem_anon", model=OfflineChatModel(),
+    )
+    tools, _reply = await _collect_reply(agent, "手机号后四位 3721，查下我的会员等级和积分")
+    assert "query_user_profile" in tools
+
+    record = await user_memory_store.get("3721")
+    assert record is not None
+    assert record["nickname"] == "追风的云"
+    assert not record.get("user_id")            # 匿名会话不写 user_id
+
+
+# ---------------- 会话状态持久化 ----------------
+
+def test_session_id_rejects_path_traversal():
+    """session_id 来自客户端且会拼进文件路径，必须拒绝穿越字符。"""
+    from backend.store.session_store import is_safe_session_id
+
+    assert is_safe_session_id("sess_01ff30695a91")
+    assert not is_safe_session_id("../../etc/passwd")
+    assert not is_safe_session_id("a/b")
+    assert not is_safe_session_id("a\\b")
+    assert not is_safe_session_id("..")
+    assert not is_safe_session_id("")
+    assert not is_safe_session_id("x" * 65)
+
+
+async def test_session_state_persists_across_restart(tmp_path):
+    """会话状态持久化：模拟进程重启后仍能恢复上下文并继续对话。"""
+    os.environ["MODEL_PROVIDER"] = "mock"
+    from backend.config import get_settings
+    from backend.session_manager import SessionManager
+    from backend.store.session_store import SessionStore
+    from backend.mock_model import OfflineChatModel
+
+    settings = get_settings()
+    store = SessionStore(directory=tmp_path / "sessions")   # 不污染演示数据
+
+    def _factory(session_id, state=None, user_id=""):
+        from backend.agent_factory import build_customer_service_agent
+
+        return build_customer_service_agent(
+            settings, session_id, state=state,
+            model=OfflineChatModel(), user_id=user_id,
+        )
+
+    # ---- 进程 1 ----
+    m1 = SessionManager(settings, _factory, session_store=store)
+    rt1 = await m1.create(user_id="U10001")
+    sid = rt1.session_id
+    await _collect_reply(rt1.agent, "帮我查订单 SO20260810001 的物流")
+    assert await m1.persist(rt1) is True
+    turns_before = len(rt1.agent.state.context)
+    assert turns_before > 0
+
+    # ---- 进程 2：全新 manager，内存中不含该会话 ----
+    m2 = SessionManager(settings, _factory, session_store=store)
+    assert m2.get(sid) is None
+
+    rt2 = await m2.get_or_create(sid)
+    assert len(rt2.agent.state.context) == turns_before   # 上下文完整恢复
+    assert rt2.user_id == "U10001"                        # 身份一并恢复
+
+    # 恢复后可直接继续对话（_collect_reply 内部断言 finished_reason == completed）
+    tools, _reply = await _collect_reply(rt2.agent, "那物流呢")
+    assert tools
+
+    # 未知 session_id 不应伪造会话，而是新建
+    rt3 = await m2.get_or_create("sess_ffffffffffff")
+    assert rt3.agent.state.context == []

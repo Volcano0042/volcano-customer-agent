@@ -22,10 +22,12 @@ WEB_DIR = ROOT_DIR / "web"
 settings = get_settings()
 
 
-def _agent_factory(session_id: str):
+def _agent_factory(session_id: str, state=None, user_id: str = ""):
     from .agent_factory import build_customer_service_agent
 
-    return build_customer_service_agent(settings, session_id)
+    return build_customer_service_agent(
+        settings, session_id, state=state, user_id=user_id,
+    )
 
 
 manager = SessionManager(settings=settings, agent_factory=_agent_factory)
@@ -92,6 +94,7 @@ async def list_sessions() -> dict:
             "message_count": len(runtime.agent.state.context),
             "preview": runtime.preview,
             "handed_off": runtime.handed_off,
+            "user_id": runtime.user_id,
         })
     items.sort(key=lambda it: it["last_active_at"], reverse=True)
     return {"sessions": items}
@@ -112,7 +115,9 @@ async def chat(req: ChatRequest) -> StreamingResponse:
     from .service import stream_chat
 
     async def gen():
-        async for chunk in stream_chat(manager, settings, req.session_id, req.message):
+        async for chunk in stream_chat(
+            manager, settings, req.session_id, req.message, req.user_id or "",
+        ):
             yield chunk
 
     return StreamingResponse(

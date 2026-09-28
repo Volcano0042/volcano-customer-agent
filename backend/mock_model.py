@@ -18,7 +18,7 @@ import re
 from typing import Any, AsyncGenerator
 
 from agentscope.message import Msg
-from agentscope.model import ChatModelBase, ChatResponse
+from agentscope.model import ChatModelBase, ChatResponse, ChatUsage
 from agentscope.formatter import OpenAIChatFormatter
 from agentscope.message import TextBlock, ThinkingBlock, ToolCallBlock
 from agentscope._utils._common import _generate_id
@@ -32,6 +32,32 @@ _ACK_WORDS = ("好的", "好", "嗯", "嗯嗯", "确认", "是的", "对", "行"
               "就这样", "没问题", "ok", "OK")
 
 _THINK = "思考过程："
+
+# 中日韩统一表意文字 + 全角标点：按 1 字 ≈ 1 token 估算
+_CJK_RE = re.compile(r"[　-〿㐀-䶿一-鿿＀-￯]")
+
+
+def _estimate_tokens(text: str) -> int:
+    """按字符构成估算 token 数（离线模型的用量上报用）。
+
+    真实模型会返回服务端的精确用量，离线模型没有服务端，只能估：
+    中文约 1 字 1 token，其余按 4 字符 1 token。仅用于让
+    ``ReplyBudgetControlMiddleware`` 在无 Key 环境下也能生效，
+    不追求与任何具体分词器对齐。
+    """
+    cjk = len(_CJK_RE.findall(text))
+    return cjk + max(0, len(text) - cjk) // 4
+
+
+def _usage(input_tokens: int, output_text: str) -> ChatUsage:
+    """构造离线模型的用量上报（估算值）。"""
+    return ChatUsage(
+        input_tokens=input_tokens,
+        output_tokens=_estimate_tokens(output_text),
+        time=0.0,
+    )
+
+
 
 
 def _tool_result_after(msgs: list[Msg]) -> list[tuple[str, dict]]:
@@ -268,6 +294,13 @@ class OfflineChatModel(ChatModelBase):
 
         action = self._decide(intent, ex, results, user_text)
 
+        # 用量上报：真实模型由服务端返回，离线模型只能按字符估算。
+        # 有了它，ReplyBudgetControlMiddleware 在无 Key 环境下同样能生效，
+        # 否则 token 用量恒为 0，预算形同虚设。
+        in_tokens = sum(
+            _estimate_tokens(m.get_text_content() or "") for m in messages
+        )
+
         # 思考块
         think = "识别用户意图并确定下一步操作…"
         if action.get("type") == "tool":
@@ -295,16 +328,25 @@ class OfflineChatModel(ChatModelBase):
                     )
                 ],
                 is_last=False,
+                # 本路分支只有这一个增量块，用量挂在它上面
+                usage=_usage(in_tokens, think + args_json),
             )
             return
 
         # 纯文本回复，流式吐出（只出增量块，由框架累积并补发 is_last=True 完整块）
         text = action.get("text", "")
-        for i in range(0, len(text), 7):
+        chunks = [text[i : i + 7] for i in range(0, len(text), 7)]
+        for i, chunk in enumerate(chunks):
             yield ChatResponse(
                 id=resp_id,
-                content=[TextBlock(text=text[i : i + 7], id=text_id)],
+                content=[TextBlock(text=chunk, id=text_id)],
                 is_last=False,
+                # 与真实服务端一致：用量随最后一个增量块返回
+                usage=(
+                    _usage(in_tokens, think + text)
+                    if i == len(chunks) - 1
+                    else None
+                ),
             )
             await asyncio.sleep(0.012)
 

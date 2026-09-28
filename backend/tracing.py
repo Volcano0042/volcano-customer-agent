@@ -71,6 +71,9 @@ class TraceRecord:
     tools: list = field(default_factory=list)
     ttft_ms: float | None = None
     tokens_chars: int = 0     # 用字符数近似（离线 mock 场景下）
+    # 模型上报的 token 用量累计（真实模型为服务端精确值，离线模型为字符估算）
+    tokens_in: int = 0
+    tokens_out: int = 0
 
     def summary(self) -> dict:
         return {
@@ -88,6 +91,8 @@ class TraceRecord:
             "tools": list(self.tools),
             "ttft_ms": round(self.ttft_ms, 1) if self.ttft_ms is not None else None,
             "spans_num": len(self.spans),
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
         }
 
     def detail(self) -> dict:
@@ -192,6 +197,11 @@ class TraceRecorder:
 
     def add_chars(self, n: int) -> None:
         self.trace.tokens_chars += max(0, n)
+
+    def add_usage(self, tokens_in: int, tokens_out: int) -> None:
+        """累计一次模型调用的 token 用量。"""
+        self.trace.tokens_in += max(0, tokens_in)
+        self.trace.tokens_out += max(0, tokens_out)
 
     # ---- 结束 ----
     def finish(self, finished_reason: str = "completed") -> None:

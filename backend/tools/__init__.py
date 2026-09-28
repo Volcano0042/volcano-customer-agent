@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """客服业务工具集。"""
+from typing import Any
+
 from agentscope.tool import FunctionTool, Toolkit
 
 from .knowledge import search_faq
@@ -17,29 +19,43 @@ from .shop import (
 )
 
 
+# 工具清单：(实现函数, 是否只读)。这是工具集的唯一数据源 —— Toolkit 与
+# 权限白名单都从这里派生，避免两处各写一份而悄悄漂移。
+# 只读工具会被 AgentScope 的权限引擎自动放行；非只读工具必须显式列入白名单
+# 才会被放行（见 agent_factory.build_permission_context）。
+TOOL_SPECS: tuple[tuple[Any, bool], ...] = (
+    # ---- 只读：查订单 / 物流 / 资料 / 政策 / 商品 ----
+    (query_order, True),
+    (list_recent_orders, True),
+    (track_logistics, True),
+    (query_user_profile, True),
+    (search_faq, True),
+    (check_refund_policy, True),
+    (list_products, True),
+    (query_product, True),
+    (view_cart, True),
+    # ---- 写：退款 / 取消 / 工单 / 转人工 / 购物车 / 下单 / 支付 ----
+    (apply_refund, False),
+    (cancel_order, False),
+    (create_ticket, False),
+    (transfer_to_human, False),
+    (add_to_cart, False),
+    (update_cart_item, False),
+    (place_order, False),
+    (pay_order, False),
+)
+
+
 def build_toolkit() -> Toolkit:
     """构建面向客服 Agent 的 Toolkit（AgentScope 2.0 工具层）。"""
     return Toolkit(
-        tools=[
-            FunctionTool(query_order, is_read_only=True),
-            FunctionTool(list_recent_orders, is_read_only=True),
-            FunctionTool(track_logistics, is_read_only=True),
-            FunctionTool(query_user_profile, is_read_only=True),
-            FunctionTool(search_faq, is_read_only=True),
-            FunctionTool(check_refund_policy, is_read_only=True),
-            FunctionTool(apply_refund),
-            FunctionTool(cancel_order),
-            FunctionTool(create_ticket),
-            FunctionTool(transfer_to_human),
-            FunctionTool(list_products, is_read_only=True),
-            FunctionTool(query_product, is_read_only=True),
-            FunctionTool(view_cart, is_read_only=True),
-            FunctionTool(add_to_cart),
-            FunctionTool(update_cart_item),
-            FunctionTool(place_order),
-            FunctionTool(pay_order),
-        ],
+        tools=[FunctionTool(fn, is_read_only=ro) for fn, ro in TOOL_SPECS],
     )
 
 
-__all__ = ["build_toolkit"]
+def tool_names() -> list[str]:
+    """本 Agent 的业务工具名列表（权限白名单的单一数据源）。"""
+    return [fn.__name__ for fn, _ in TOOL_SPECS]
+
+
+__all__ = ["build_toolkit", "tool_names", "TOOL_SPECS"]

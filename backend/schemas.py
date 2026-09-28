@@ -13,6 +13,14 @@ class ChatRequest(BaseModel):
         description="会话 ID，缺省时自动创建新会话",
     )
     message: str = Field(min_length=1, max_length=4000, description="用户消息")
+    user_id: str | None = Field(
+        default=None,
+        description=(
+            "用户标识（如登录态下的 U10001）。用于跨会话记忆："
+            "带上它，新会话第一轮就能认出回头客；不传则退化为匿名会话，"
+            "待 Agent 问到手机号后四位后再建立身份。"
+        ),
+    )
 
 
 class SessionInfo(BaseModel):
@@ -24,6 +32,7 @@ class SessionInfo(BaseModel):
     message_count: int
     preview: str = ""
     handed_off: bool = False
+    user_id: str = ""
 
 
 class HistoryMessage(BaseModel):
