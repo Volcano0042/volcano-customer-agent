@@ -12,3 +12,6 @@ import os
 
 os.environ["EMBED_PROVIDER"] = "none"
 os.environ["RERANK_PROVIDER"] = "none"
+# 评测裁判走真实模型 API：测试里清空裁判配置，Judge.available=False，全程离线确定性判定。
+os.environ["EVAL_JUDGE_MODEL"] = ""
+os.environ["EVAL_JUDGE_BASE_URL"] = ""

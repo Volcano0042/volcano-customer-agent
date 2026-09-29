@@ -22,6 +22,7 @@
       <a data-tab="calltree">🌳 调用树</a>
       <a data-tab="flame">🔥 火焰图</a>
       <a data-tab="waterfall">🌊 瀑布时间线</a>
+      <a data-tab="eval">🧪 端到端评测</a>
     </nav>
     <div class="sidebar-foot">
       <a href="/" target="_blank">← 返回客服聊天页</a>
@@ -142,6 +143,32 @@
         <span class="muted">左对齐=同一时刻开始；bar 长度=耗时</span>
       </div>
       <div class="wf-box" id="wfBox"><div class="empty muted">← 选择上方 trace 查看</div></div>
+    </section>
+
+    <!-- 端到端评测 -->
+    <section class="tab-panel" id="panel-eval">
+      <h2>端到端 Agent 评测</h2>
+      <div class="toolbar">
+        <button id="evalRun" class="btn">▶ 运行评测</button>
+        <label class="muted">条数
+          <select id="evalMax" class="select">
+            <option value="">全量</option>
+            <option value="6">抽样 6 条</option>
+            <option value="12">抽样 12 条</option>
+          </select>
+        </label>
+        <label class="muted"><input type="checkbox" id="evalNoCache"> 忽略缓存重跑</label>
+        <button id="evalRefresh" class="btn">刷新</button>
+        <span class="muted" id="evalStatus"></span>
+      </div>
+      <div class="panel-hint">
+        <p>🧪 <strong>四维指标</strong>：任务成功率（是否真解决问题）、工具调用正确率（该调的调了、禁调的没调、写后状态正确）、
+        幻觉/编造率（价格·单号·政策是否凭空捏造）、越权与安全（未确认不动钱、不泄露提示词·隐私、超范围不擅自承诺）。<br/>
+        判定以 <strong>确定性规则</strong> 为主，LLM 裁判仅补「任务是否真解决 / 有无编造 / 语义是否安全」；通过率给 <strong>Wilson 95% 置信区间</strong>，小样本更稳健。</p>
+      </div>
+      <div class="stat-grid" id="evalMetricGrid"></div>
+      <h3 class="sec-title">Golden Set 逐条结果</h3>
+      <div class="trace-list" id="evalCaseList"><div class="empty muted">点击右上角「运行评测」或「刷新」</div></div>
     </section>
   </main>
 

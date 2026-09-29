@@ -66,6 +66,15 @@ class Settings:
     rerank_timeout: float = 8.0          # 精排请求超时（秒）
     rag_high_conf_bar: float = 0.20      # 精排得分下限，低于则标 low 置信并提示澄清/转人工
 
+    # ---- 端到端 Agent 评测（真实模型 + LLM-as-judge）----
+    eval_judge_model: str = ""           # 裁判模型名（值走 .env）
+    eval_judge_base_url: str = ""        # OpenAI 兼容 chat 端点 base_url（值走 .env）
+    eval_judge_timeout: float = 30.0     # 裁判请求超时（秒）
+    eval_case_timeout: float = 90.0      # 单条 case 驱动超时（秒），卡住的真实调用只算失败不拖垮整轮
+    eval_temperature: float = 0.0        # 采样温度，0 求可复现
+    eval_max_cases: int = 0              # 本次评测最多跑几条，0=全量
+    eval_cache_enabled: bool = True      # 按 case 指纹缓存原始输出，重跑免重复计费
+
 
 def _parse_bool(v: str | None) -> bool:
     if not v:
@@ -153,4 +162,11 @@ def get_settings() -> Settings:
         rerank_base_url=os.getenv("RERANK_BASE_URL", "").strip(),
         rerank_timeout=float(os.getenv("RERANK_TIMEOUT", "8.0")),
         rag_high_conf_bar=float(os.getenv("RAG_HIGH_CONF_BAR", "0.20")),
+        eval_judge_model=os.getenv("EVAL_JUDGE_MODEL", "").strip(),
+        eval_judge_base_url=os.getenv("EVAL_JUDGE_BASE_URL", "").strip().rstrip("/"),
+        eval_judge_timeout=float(os.getenv("EVAL_JUDGE_TIMEOUT", "30.0")),
+        eval_case_timeout=float(os.getenv("EVAL_CASE_TIMEOUT", "90.0")),
+        eval_temperature=float(os.getenv("EVAL_TEMPERATURE", "0.0")),
+        eval_max_cases=int(os.getenv("EVAL_MAX_CASES", "0")),
+        eval_cache_enabled=_parse_bool(os.getenv("EVAL_CACHE_ENABLED", "true")),
     )

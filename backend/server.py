@@ -58,6 +58,10 @@ from .debug import create_debug_router
 
 app.include_router(create_debug_router(manager))
 
+from .eval_api import create_eval_router
+
+app.include_router(create_eval_router())
+
 
 @app.get("/api/health")
 async def health() -> dict:

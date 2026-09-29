@@ -49,6 +49,10 @@ function bindTabs() {
     a.classList.add("active");
     document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
     $("#panel-" + a.dataset.tab).classList.add("active");
+    if (a.dataset.tab === "eval" && !state._evalLoaded) {
+      state._evalLoaded = true;
+      loadEval();
+    }
   });
 }
 
@@ -304,6 +308,79 @@ function buildSpanTreeFromTrace(t) {
   return root;
 }
 
+/* ---------------- 端到端评测 ---------------- */
+const DIM_LABEL = {
+  task: "任务成功", tool: "工具正确", hallucination: "无编造", safety: "安全合规", _overall: "整体通过",
+};
+
+function pctTxt(rate) { return rate == null ? "—" : Math.round(rate * 100) + "%"; }
+function ciTxt(ci) { return ci ? " [" + Math.round(ci[0] * 100) + "%, " + Math.round(ci[1] * 100) + "%]" : ""; }
+
+function evalMetricCardHtml(dim, row) {
+  const good = row.rate != null && row.rate >= 0.9;
+  const cls = row.n === 0 ? "" : (good ? "done" : (row.rate >= 0.6 ? "" : "pending"));
+  return `<div class="stat ${cls}">
+    <div class="num">${pctTxt(row.rate)}</div>
+    <div class="lbl">${DIM_LABEL[dim] || dim} · ${row.passed}/${row.n}${ciTxt(row.ci95)}</div>
+  </div>`;
+}
+
+function evalCaseRowHtml(r) {
+  const chips = Object.entries(r.scores.dims).map(([dim, v]) =>
+    `<span class="kchip" style="background:${v.pass ? "#16a34a" : "#ef4444"}" title="${escapeHtml((v.signals || []).map(s => (s.ok ? "✓" : "✗") + s.why).join(" | "))}">${DIM_LABEL[dim] || dim}</span>`
+  ).join("");
+  const reason = r.verdict && r.verdict.reasoning ? escapeHtml(r.verdict.reasoning) : "";
+  const src = r.from_cache ? "缓存" : "实跑";
+  const detail = `
+    <div class="children" style="display:none;padding:6px 10px;color:#5a6172;font-size:12px">
+      <div>目标：${escapeHtml(r.goal || "")}</div>
+      <div>裁判：${reason || "（无 LLM 裁判）"}</div>
+      <div>工具：${escapeHtml((r.transcript.turns || []).flatMap(t => (t.tools || []).map(x => x.name)).join(", ") || "无")}</div>
+      ${r.verdict ? `<div>裁判判定：任务${r.verdict.task_success ? "✓" : "✗"} · 编造${r.verdict.hallucination ? "⚠" : "无"} · 安全${r.verdict.safety_ok ? "✓" : "✗"}</div>` : ""}
+    </div>`;
+  return `<div class="trace-item eval-case" data-id="${r.case_id}">
+      <span class="st ${r.overall_pass ? "done" : "failed"}">${r.overall_pass ? "通过" : "未过"}</span>
+      <span class="id" title="${escapeHtml(r.category)}">${escapeHtml(r.case_id)}</span>
+      <span class="trace-tools">${chips}</span>
+      <span class="meta">${src}</span>
+    </div>${detail}`;
+}
+
+async function renderEvalRun(runId) {
+  const data = await api("/api/eval/runs/" + runId);
+  const run = data.run;
+  $("#evalMetricGrid").innerHTML = ["task", "tool", "hallucination", "safety", "_overall"]
+    .map((d) => evalMetricCardHtml(d, run.metrics[d])).join("");
+  $("#evalCaseList").innerHTML = run.results.map(evalCaseRowHtml).join("");
+  $("#evalStatus").textContent = "运行 " + run.run_id + " · 模型 " + run.model
+    + " · 裁判 " + (run.judge_available ? run.judge_model : "未启用")
+    + " · " + new Date(run.created_at).toLocaleString("zh-CN");
+}
+
+async function loadEval() {
+  const s = await api("/api/eval/summary");
+  if (!s.available) {
+    $("#evalMetricGrid").innerHTML = "";
+    $("#evalCaseList").innerHTML = '<div class="empty">尚未运行过评测，点击「运行评测」开始</div>';
+    $("#evalStatus").textContent = "";
+    return;
+  }
+  await renderEvalRun(s.run_id);
+}
+
+let evalPollTimer = null;
+function pollEvalStatus() {
+  clearInterval(evalPollTimer);
+  evalPollTimer = setInterval(async () => {
+    const st = await api("/api/eval/run/status");
+    if (st.running) { $("#evalStatus").textContent = "评测运行中…（真实模型，请稍候）"; return; }
+    clearInterval(evalPollTimer);
+    if (st.error) { toast("评测失败：" + st.error); return; }
+    toast("评测完成");
+    await loadEval();
+  }, 2500);
+}
+
 /* ---------------- 事件绑定 ---------------- */
 function bindEvents() {
   $("#refreshTraces").addEventListener("click", () => loadTraces(false));
@@ -356,6 +433,38 @@ function bindEvents() {
     tip.style.left = x + "px"; tip.style.top = y + "px";
   });
   $("#flameBox").addEventListener("mouseleave", () => tip.classList.add("hidden"));
+
+  // 评测看板
+  $("#evalRefresh").addEventListener("click", () => loadEval());
+  $("#evalCaseList").addEventListener("click", (ev) => {
+    const item = ev.target.closest(".eval-case");
+    if (!item) return;
+    const detail = item.nextElementSibling;
+    if (detail && detail.classList.contains("children")) {
+      detail.style.display = detail.style.display === "none" ? "" : "none";
+    }
+  });
+  $("#evalRun").addEventListener("click", async () => {
+    const btn = $("#evalRun");
+    const maxv = $("#evalMax").value;
+    try {
+      btn.disabled = true;
+      await api("/api/eval/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          max_cases: maxv ? Number(maxv) : null,
+          no_cache: $("#evalNoCache").checked,
+        }),
+      });
+      toast("已启动评测");
+      pollEvalStatus();
+    } catch (e) {
+      toast("启动失败：" + e.message);
+    } finally {
+      setTimeout(() => { btn.disabled = false; }, 3000);
+    }
+  });
 }
 
 /* ---------------- 启动 ---------------- */
