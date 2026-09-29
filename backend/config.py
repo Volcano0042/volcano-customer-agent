@@ -57,6 +57,15 @@ class Settings:
     rag_min_score: float = 0.15          # 混合得分下限，低于即视为未命中
     rag_alpha: float = 0.7               # 稠密向量权重，(1-alpha) 为词面权重
 
+    # ---- Agentic RAG：查询改写 + 精排 + 置信度自检 ----
+    query_rewrite_enabled: bool = True   # 是否对电商同义词做 multi-query 扩展再召回
+    rag_recall_k: int = 8                # 进入精排的候选短列表大小（召回放宽，精排收敛）
+    rerank_provider: str = "none"        # "dashscope" | "none"；配好 key+base_url+model 才启用
+    rerank_model: str = ""               # 精排模型名（值走 .env，代码不写死厂商）
+    rerank_base_url: str = ""            # 精排接口完整 URL（值走 .env）
+    rerank_timeout: float = 8.0          # 精排请求超时（秒）
+    rag_high_conf_bar: float = 0.20      # 精排得分下限，低于则标 low 置信并提示澄清/转人工
+
 
 def _parse_bool(v: str | None) -> bool:
     if not v:
@@ -89,6 +98,16 @@ def _resolve_embed_provider() -> str:
     if provider in {"dashscope", "none"}:
         return provider
     return "dashscope" if os.getenv("DASHSCOPE_API_KEY") else "none"
+
+
+def _resolve_rerank_provider() -> str:
+    """精排后端：显式指定优先；否则配了精排模型且有 DashScope Key 就自动启用，任一缺失则 none（跳过精排）。"""
+    provider = os.getenv("RERANK_PROVIDER", "").strip().lower()
+    if provider in {"dashscope", "none"}:
+        return provider
+    if os.getenv("RERANK_MODEL", "").strip() and os.getenv("DASHSCOPE_API_KEY"):
+        return "dashscope"
+    return "none"
 
 
 @lru_cache
@@ -127,4 +146,11 @@ def get_settings() -> Settings:
         rag_top_k=int(os.getenv("RAG_TOP_K", "3")),
         rag_min_score=float(os.getenv("RAG_MIN_SCORE", "0.15")),
         rag_alpha=float(os.getenv("RAG_ALPHA", "0.7")),
+        query_rewrite_enabled=_parse_bool(os.getenv("QUERY_REWRITE_ENABLED", "true")),
+        rag_recall_k=int(os.getenv("RAG_RECALL_K", "8")),
+        rerank_provider=_resolve_rerank_provider(),
+        rerank_model=os.getenv("RERANK_MODEL", "").strip(),
+        rerank_base_url=os.getenv("RERANK_BASE_URL", "").strip(),
+        rerank_timeout=float(os.getenv("RERANK_TIMEOUT", "8.0")),
+        rag_high_conf_bar=float(os.getenv("RAG_HIGH_CONF_BAR", "0.20")),
     )

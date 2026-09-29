@@ -153,6 +153,7 @@
     slotEl.main.appendChild(card);
     slotEl.tools = slotEl.tools || {};
     slotEl.tools[id] = card;
+    card.dataset.tool = name;
     scrollBottom();
     return card;
   }
@@ -204,6 +205,8 @@
       time: wrap.querySelector(".time"),
       text: "",
       tools: {},
+      sources: [],
+      lowConf: false,
       thinkingEl: null,
       buf: null,
     };
@@ -213,6 +216,56 @@
     let html = miniMarkdown(slot.text);
     if (state.streaming) html += '<span class="cursor"></span>';
     slot.bubble.innerHTML = html;
+    scrollBottom();
+  }
+
+  // 从 search_faq 结果提取引用来源，按 id 去重累积
+  function collectCitations(slot, raw) {
+    if (!raw) return;
+    let data;
+    try { data = JSON.parse(raw); } catch (_) { return; }
+    if (data && data.confidence === "low") slot.lowConf = true;
+    const cites = (data && data.citations) || [];
+    slot.sources = slot.sources || [];
+    const seen = new Set(slot.sources.map((s) => s.id));
+    for (const c of cites) {
+      if (c && c.title && !seen.has(c.id)) {
+        seen.add(c.id);
+        slot.sources.push({ id: c.id || c.title, title: c.title, snippet: c.snippet || "" });
+      }
+    }
+  }
+
+  // 在气泡下方渲染「依据」来源条
+  function renderSources(slot) {
+    if (!slot || !slot.sources || !slot.sources.length) return;
+    if (slot.main.querySelector(".sources")) return; // 已渲染则跳过
+    const chips = slot.sources
+      .map(
+        (s) =>
+          `<span class="src-chip" title="${escapeHtml(s.snippet)}">📄 ${escapeHtml(s.title)}</span>`
+      )
+      .join("");
+    const note = slot.lowConf
+      ? '<span class="src-note">⚠️ 相关度偏低，已建议进一步核实</span>'
+      : "";
+    const box = document.createElement("div");
+    box.className = "sources";
+    box.style.cssText =
+      "margin-top:8px;padding-top:8px;border-top:1px dashed #d9d9e3;display:flex;flex-wrap:wrap;gap:6px;align-items:center;";
+    box.innerHTML =
+      '<span style="font-size:12px;color:#888;">依据：</span>' +
+      chips +
+      note;
+    const style = document.createElement("style");
+    style.textContent =
+      ".src-chip{font-size:12px;color:#4b5cff;background:#eef0ff;border:1px solid #d7dbff;border-radius:10px;padding:2px 8px;cursor:default;}" +
+      ".src-note{font-size:12px;color:#c47f00;margin-left:4px;}";
+    if (!document.querySelector("#sources-style")) {
+      style.id = "sources-style";
+      document.head.appendChild(style);
+    }
+    slot.main.appendChild(box);
     scrollBottom();
   }
   // ---------------- SSE 解析 ----------------
@@ -270,6 +323,7 @@
         s.time.textContent = nowTime();
       }
       renderBubble(s);
+      renderSources(s);
     }
   }
 
@@ -309,6 +363,7 @@
           const card = slot.tools[data.id];
           markToolDone(card);
           fillToolBody(card, card.dataset.args, data.result);
+          if (card.dataset.tool === "search_faq") collectCitations(slot, data.result);
           scrollBottom();
         }
         break;
@@ -372,7 +427,9 @@
           const card = addToolCard(slot, tc.id, tc.name);
           markToolDone(card);
           fillToolBody(card, tc.args || "", tc.result);
+          if (tc.name === "search_faq") collectCitations(slot, tc.result);
         }
+        renderSources(slot);
       }
     }
     scrollBottom();

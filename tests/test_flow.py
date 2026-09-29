@@ -754,3 +754,72 @@ async def test_session_state_persists_across_restart(tmp_path):
     # 未知 session_id 不应伪造会话，而是新建
     rt3 = await m2.get_or_create("sess_ffffffffffff")
     assert rt3.agent.state.context == []
+
+
+# ---------------- Agentic RAG：查询改写 / 精排降级 / 引用溯源 / 置信度 ----------------
+# 全程离线（conftest 已关 EMBED_PROVIDER 与 RERANK_PROVIDER）。
+
+def test_query_rewrite_expands_ecommerce_synonyms():
+    """口语应被扩展出规范词查询（买贵了→保价/价格保护），且关掉开关时只用原句。"""
+    from backend.rag.query_rewrite import expand_queries
+
+    variants = expand_queries("买贵了能退差价吗", enabled=True)
+    assert variants[0] == "买贵了能退差价吗"          # 原句恒在首位
+    assert len(variants) > 1                          # 确实产生了扩展
+    assert any("保价" in v or "价格保护" in v for v in variants)
+
+    # 关闭扩展：只返回原句，行为退回旧实现
+    assert expand_queries("买贵了能退差价吗", enabled=False) == ["买贵了能退差价吗"]
+
+
+async def test_retriever_offline_returns_dict_with_citations():
+    """降级（词面）路径下检索返回结构化 dict：results 带 snippet/source_id，附 confidence/queries。"""
+    from backend.config import get_settings
+    from backend.rag.retriever import KnowledgeBase
+    from backend.store.mock_store import faq_store
+
+    settings = get_settings()
+    kb = KnowledgeBase(settings)
+    entries = await faq_store.all()
+    out = await kb.search("退货规则是什么？", entries)
+
+    assert isinstance(out, dict)
+    assert out["confidence"] == "high"                # 降级路径不误判低置信
+    assert out["queries"] and out["queries"][0] == "退货规则是什么？"
+    assert out["results"], "退货规则应命中 FAQ"
+    top = out["results"][0]
+    assert "七天" in top["title"]
+    assert top["source_id"] and top["snippet"]        # 引用溯源字段齐备
+    assert top["retrieval"] == "lexical"              # 离线为纯词面模式
+    assert top["rerank"] is None                       # 未精排
+
+
+async def test_search_faq_tool_exposes_citations():
+    """工具层把命中整理成 citations，并保持 found/results 向后兼容。"""
+    from backend.tools.knowledge import search_faq
+
+    data = await search_faq("开发票要怎么申请？")
+    assert data["found"] is True
+    assert "results" in data and "citations" in data
+    assert data["confidence"] == "high"
+    cite = data["citations"][0]
+    assert cite["id"] and cite["title"] and "snippet" in cite
+
+
+async def test_search_faq_no_hit_falls_back_to_message():
+    """完全无关的问题检索不到，退回 found=False 的转人工提示（旧语义不变）。"""
+    from backend.tools.knowledge import search_faq
+
+    data = await search_faq("火星移民指南")
+    assert data["found"] is False
+    assert "message" in data and "转人工" in data["message"]
+
+
+async def test_reranker_degrades_when_unconfigured():
+    """无 Key / provider=none 时精排不可用，rerank 返回 None 交检索层保持原序。"""
+    from backend.config import get_settings
+    from backend.rag.reranker import Reranker
+
+    rr = Reranker(get_settings())
+    assert rr.available is False                       # conftest 已关精排
+    assert await rr.rerank("退货规则", ["七天无理由退货", "运费规则"]) is None
