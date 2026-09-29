@@ -32,6 +32,8 @@ htmlcov/
 # ---- 运行时状态 ----
 # 跨会话用户记忆：运行期生成，不属于演示数据（backend/data/ 下其余 JSON 是演示数据，需提交）
 backend/data/memory.json
+# RAG 向量缓存：由 Embedding API 生成，可按内容哈希重建，无需入库
+backend/data/embeddings_cache.json
 # 会话存档（AgentState 序列化结果）
 backend/data/sessions/
 

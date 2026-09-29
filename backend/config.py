@@ -47,6 +47,16 @@ class Settings:
     fallback_model: str = "offline-mock"
     fallback_timeout_seconds: float = 30.0
 
+    # ---- RAG 知识库检索配置 ----
+    embed_provider: str = "none"
+    embed_model: str = ""
+    embed_base_url: str = ""
+    embed_timeout: float = 15.0
+    embed_batch_size: int = 10           # 单次 API 请求最多几条文本
+    rag_top_k: int = 3                   # 最终返回的知识条数
+    rag_min_score: float = 0.15          # 混合得分下限，低于即视为未命中
+    rag_alpha: float = 0.7               # 稠密向量权重，(1-alpha) 为词面权重
+
 
 def _parse_bool(v: str | None) -> bool:
     if not v:
@@ -71,6 +81,14 @@ def _resolve_model(provider: str) -> str:
     if provider == "openai":
         return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     return "offline-mock"
+
+
+def _resolve_embed_provider() -> str:
+    """向量化后端：显式指定优先，否则有 DashScope Key 就自动启用，无 Key 退回词面。"""
+    provider = os.getenv("EMBED_PROVIDER", "").strip().lower()
+    if provider in {"dashscope", "none"}:
+        return provider
+    return "dashscope" if os.getenv("DASHSCOPE_API_KEY") else "none"
 
 
 @lru_cache
@@ -101,4 +119,12 @@ def get_settings() -> Settings:
         fallback_provider=os.getenv("FALLBACK_PROVIDER", "mock").strip().lower(),
         fallback_model=os.getenv("FALLBACK_MODEL", "offline-mock"),
         fallback_timeout_seconds=float(os.getenv("FALLBACK_TIMEOUT_SECONDS", "30.0")),
+        embed_provider=_resolve_embed_provider(),
+        embed_model=os.getenv("EMBED_MODEL", "").strip(),
+        embed_base_url=os.getenv("EMBED_BASE_URL", "").strip().rstrip("/"),
+        embed_timeout=float(os.getenv("EMBED_TIMEOUT", "15.0")),
+        embed_batch_size=int(os.getenv("EMBED_BATCH_SIZE", "10")),
+        rag_top_k=int(os.getenv("RAG_TOP_K", "3")),
+        rag_min_score=float(os.getenv("RAG_MIN_SCORE", "0.15")),
+        rag_alpha=float(os.getenv("RAG_ALPHA", "0.7")),
     )

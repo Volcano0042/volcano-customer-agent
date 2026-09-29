@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "agentscope>=2.0.6",
     "fastapi>=0.115",
+    "httpx>=0.28",
     "python-dotenv>=1.0",
     "uvicorn[standard]>=0.30",
 ]
