@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """全局配置（从 .env / 环境变量加载）。"""
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -21,8 +21,9 @@ class Settings:
     # "dashscope" | "openai" | "mock"
     model_provider: str
     model_name: str
-    dashscope_api_key: str | None
-    openai_api_key: str | None
+    # repr=False：密钥不进 repr
+    dashscope_api_key: str | None = field(repr=False)
+    openai_api_key: str | None = field(repr=False)
     openai_base_url: str | None
 
     host: str = "0.0.0.0"
@@ -47,6 +48,12 @@ class Settings:
     fallback_model: str = "offline-mock"
     fallback_timeout_seconds: float = 30.0
 
+    # ---- 多智能体（监督者 + 专家子 agent，agent-as-tool）----
+    multi_agent_enabled: bool = False    # 关闭时走单 agent 主链路（默认，离线可跑通）
+    specialist_max_iters: int = 6        # 单个专家子 agent 的最大推理-行动轮次
+    supervisor_model: str = ""           # 监督者用模型，空=与主模型同款
+    passthrough_single_delegation: bool = True   # 只委派一个专家时直接采用其答案，跳过终答重写
+
     # ---- RAG 知识库检索配置 ----
     embed_provider: str = "none"
     embed_model: str = ""
@@ -69,7 +76,7 @@ class Settings:
     # ---- 端到端 Agent 评测（真实模型 + LLM-as-judge）----
     eval_judge_model: str = ""           # 裁判模型名（值走 .env）
     eval_judge_base_url: str = ""        # OpenAI 兼容 chat 端点 base_url（值走 .env）
-    eval_judge_timeout: float = 30.0     # 裁判请求超时（秒）
+    eval_judge_timeout: float = 120.0    # 裁判请求超时（秒），裁判是推理型模型、耗时波动大，给足余量
     eval_case_timeout: float = 90.0      # 单条 case 驱动超时（秒），卡住的真实调用只算失败不拖垮整轮
     eval_temperature: float = 0.0        # 采样温度，0 求可复现
     eval_max_cases: int = 0              # 本次评测最多跑几条，0=全量
@@ -147,6 +154,12 @@ def get_settings() -> Settings:
         fallback_provider=os.getenv("FALLBACK_PROVIDER", "mock").strip().lower(),
         fallback_model=os.getenv("FALLBACK_MODEL", "offline-mock"),
         fallback_timeout_seconds=float(os.getenv("FALLBACK_TIMEOUT_SECONDS", "30.0")),
+        multi_agent_enabled=_parse_bool(os.getenv("MULTI_AGENT_ENABLED", "false")),
+        specialist_max_iters=int(os.getenv("SPECIALIST_MAX_ITERS", "6")),
+        supervisor_model=os.getenv("SUPERVISOR_MODEL", "").strip(),
+        passthrough_single_delegation=_parse_bool(
+            os.getenv("PASSTHROUGH_SINGLE_DELEGATION", "true")
+        ),
         embed_provider=_resolve_embed_provider(),
         embed_model=os.getenv("EMBED_MODEL", "").strip(),
         embed_base_url=os.getenv("EMBED_BASE_URL", "").strip().rstrip("/"),
@@ -164,7 +177,7 @@ def get_settings() -> Settings:
         rag_high_conf_bar=float(os.getenv("RAG_HIGH_CONF_BAR", "0.20")),
         eval_judge_model=os.getenv("EVAL_JUDGE_MODEL", "").strip(),
         eval_judge_base_url=os.getenv("EVAL_JUDGE_BASE_URL", "").strip().rstrip("/"),
-        eval_judge_timeout=float(os.getenv("EVAL_JUDGE_TIMEOUT", "30.0")),
+        eval_judge_timeout=float(os.getenv("EVAL_JUDGE_TIMEOUT", "120.0")),
         eval_case_timeout=float(os.getenv("EVAL_CASE_TIMEOUT", "90.0")),
         eval_temperature=float(os.getenv("EVAL_TEMPERATURE", "0.0")),
         eval_max_cases=int(os.getenv("EVAL_MAX_CASES", "0")),

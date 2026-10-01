@@ -43,10 +43,23 @@ TOOL_SPECS: tuple[tuple[Any, bool], ...] = (
 )
 
 
-def build_toolkit() -> Toolkit:
-    """构建面向客服 Agent 的 Toolkit（AgentScope 2.0 工具层）。"""
+def build_toolkit(tool_filter: list[str] | None = None) -> Toolkit:
+    """构建 Toolkit（AgentScope 2.0 工具层）。
+
+    tool_filter 为 None 时纳入全部业务工具；给定名单时只保留这些工具
+    （供多智能体的专家子 agent 装配各自的工具子集，顺序按传入名单）。
+    """
+    if tool_filter is None:
+        specs = list(TOOL_SPECS)
+    else:
+        wanted = set(tool_filter)
+        by_name = {fn.__name__: (fn, ro) for fn, ro in TOOL_SPECS}
+        missing = wanted - by_name.keys()
+        if missing:
+            raise ValueError(f"build_toolkit 收到未知工具名: {sorted(missing)}")
+        specs = [by_name[name] for name in tool_filter]
     return Toolkit(
-        tools=[FunctionTool(fn, is_read_only=ro) for fn, ro in TOOL_SPECS],
+        tools=[FunctionTool(fn, is_read_only=ro) for fn, ro in specs],
     )
 
 

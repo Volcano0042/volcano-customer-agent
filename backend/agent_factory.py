@@ -78,11 +78,41 @@ def build_customer_service_agent(
     )
 
 
-def build_permission_context() -> PermissionContext:
+def build_agent(
+    settings: Settings,
+    session_id: str,
+    state: AgentState | None = None,
+    model: ChatModelBase | None = None,
+    user_id: str = "",
+    multi_agent: bool | None = None,
+) -> Agent:
+    """按开关分发：多智能体（监督者+专家）或单 agent 主链路。
+
+    multi_agent 显式传入时覆盖全局配置；缺省读 ``settings.multi_agent_enabled``。
+    默认（关闭）走原单 agent，保证离线 clone 与既有测试不受影响。
+    """
+    use_multi = settings.multi_agent_enabled if multi_agent is None else multi_agent
+    if use_multi:
+        from .multi_agent import build_supervisor_agent
+
+        return build_supervisor_agent(
+            settings, session_id, state=state, model=model, user_id=user_id,
+        )
+    return build_customer_service_agent(
+        settings, session_id, state=state, model=model, user_id=user_id,
+    )
+
+
+def build_permission_context(extra_allow: list[str] | None = None) -> PermissionContext:
     """构造权限策略：显式工具白名单，清单之外一律不静默执行。
 
-    别改成 ``DONT_ASK``：自定义工具返回的 ASK 会被它转成 DENY，写操作全被拒。
+    ``DONT_ASK`` 不可用：它会把自定义工具返回的 ASK 转成 DENY，写操作全被拒。
+    extra_allow 用于放行多 agent 的 ``delegate_to_*`` 委派工具。
     """
+    allowed = list(tool_names())
+    for name in extra_allow or []:
+        if name not in allowed:
+            allowed.append(name)
     return PermissionContext(
         mode=PermissionMode.DEFAULT,
         allow_rules={
@@ -94,7 +124,7 @@ def build_permission_context() -> PermissionContext:
                     source="projectSettings",
                 ),
             ]
-            for name in tool_names()
+            for name in allowed
         },
     )
 
@@ -102,7 +132,7 @@ def build_permission_context() -> PermissionContext:
 def _build_context_config(settings: Settings) -> ContextConfig:
     """构造上下文策略：显式声明而不依赖 SDK 默认值。
 
-    离线模型无法输出结构化摘要，压缩走"截断最旧上下文"兜底，显式打开让行为可预期。
+    离线模型无法输出结构化摘要，压缩走"截断最旧上下文"兜底。
     """
     return ContextConfig(
         trigger_ratio=settings.context_trigger_ratio,

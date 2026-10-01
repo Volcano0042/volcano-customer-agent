@@ -22,6 +22,7 @@ from agentscope.event import (
 from agentscope.message import Msg, UserMsg, TextBlock
 
 from .config import Settings
+from .narration import NarrationFilter
 from .session_manager import SessionManager
 from .tracing import TraceRecorder, trace_store
 
@@ -45,6 +46,12 @@ class ChatStreamer:
         self._tool_args: dict[str, str] = defaultdict(str)
         self._tool_results: dict[str, str] = defaultdict(str)
         self._tool_names: dict[str, str] = {}
+
+        # ---- 旁白抑制：规则见 narration.NarrationFilter ----
+        # 未发起工具调用时正文先缓冲，发起后丢弃缓冲并转为直接流式；
+        # ChatStreamer 每轮消息新建一次，状态按轮重置。
+        self._suppress_narration: bool = True
+        self._narration = NarrationFilter()
 
         # ---- 追踪（调试平台数据源）----
         self._recorder: TraceRecorder | None = None
@@ -139,11 +146,16 @@ class ChatStreamer:
         out: list[str] = []
 
         if isinstance(evt, TextBlockDeltaEvent):
-            out.append(_sse({"event": "delta", "data": {"text": evt.delta}}))
+            text = self._narration.on_text(evt.delta) if self._suppress_narration else evt.delta
+            if text:
+                out.append(_sse({"event": "delta", "data": {"text": text}}))
         elif isinstance(evt, ThinkingBlockDeltaEvent):
             out.append(_sse({"event": "thinking", "data": {"delta": evt.delta}}))
         elif isinstance(evt, ToolCallStartEvent):
             self._tool_names[evt.tool_call_id] = evt.tool_call_name
+            if self._suppress_narration:
+                # 本段调用发起了工具：缓冲的文字是旁白，丢弃并进入正文阶段。
+                self._narration.on_tool_call()
             out.append(_sse({
                 "event": "tool_call",
                 "data": {"id": evt.tool_call_id, "name": evt.tool_call_name},
@@ -170,7 +182,18 @@ class ChatStreamer:
                     "result": result,
                 },
             }))
+        elif isinstance(evt, ModelCallEndEvent):
+            # 本段调用未发起工具：缓冲即正文（纯闲聊等无工具轮场景），推送。
+            if self._suppress_narration:
+                text = self._narration.on_model_end()
+                if text:
+                    out.append(_sse({"event": "delta", "data": {"text": text}}))
         elif isinstance(evt, ReplyEndEvent):
+            if self._suppress_narration:
+                # 兜底：正常情况下缓冲已在 ModelCallEnd 推送，这里防漏
+                text = self._narration.on_reply_end()
+                if text:
+                    out.append(_sse({"event": "delta", "data": {"text": text}}))
             out.append(_sse({
                 "event": "done",
                 "data": {

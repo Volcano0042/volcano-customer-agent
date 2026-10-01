@@ -23,9 +23,9 @@ settings = get_settings()
 
 
 def _agent_factory(session_id: str, state=None, user_id: str = ""):
-    from .agent_factory import build_customer_service_agent
+    from .agent_factory import build_agent
 
-    return build_customer_service_agent(
+    return build_agent(
         settings, session_id, state=state, user_id=user_id,
     )
 
@@ -65,7 +65,14 @@ app.include_router(create_eval_router())
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok", "provider": settings.model_provider, "model": settings.model_name}
+    return {
+        "status": "ok",
+        "provider": settings.model_provider,
+        "model": settings.model_name,
+        "mode": "multi_agent" if settings.multi_agent_enabled else "single_agent",
+        # 监督者实际使用的模型，空=与主模型同款
+        "supervisor_model": settings.supervisor_model if settings.multi_agent_enabled else "",
+    }
 
 
 @app.get("/api/config")
