@@ -10,7 +10,9 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from .config import get_settings
 from .eval import storage
+from .eval.cases import GOLDEN_CASES, case_fingerprint
 from .eval.runner import run_eval
 
 
@@ -27,7 +29,10 @@ def create_eval_router() -> APIRouter:
 
     async def _bg(max_cases: int | None, no_cache: bool) -> None:
         try:
-            run = await run_eval(max_cases=max_cases, use_cache=False if no_cache else None)
+            run = await run_eval(
+                max_cases=max_cases,
+                use_cache=False if no_cache else None,
+            )
             job["run_id"] = run["run_id"]
         except Exception as exc:  # noqa: BLE001
             job["error"] = f"{type(exc).__name__}: {exc}"
@@ -48,6 +53,16 @@ def create_eval_router() -> APIRouter:
             "judge_available": run["judge_available"],
             "case_count": run["case_count"],
             "metrics": run["metrics"],
+        }
+
+    @router.get("/cache")
+    async def cache_status() -> dict:
+        """缓存覆盖率：让页面在开跑前就能说明「这次会有多少条实跑」。"""
+        cached = sum(1 for c in GOLDEN_CASES if storage.has_cache(case_fingerprint(c)))
+        return {
+            "enabled": get_settings().eval_cache_enabled,
+            "cached": cached,
+            "total": len(GOLDEN_CASES),
         }
 
     @router.get("/runs")
@@ -71,6 +86,10 @@ def create_eval_router() -> APIRouter:
             raise HTTPException(status_code=409, detail="已有评测在进行中")
         job.update({"running": True, "run_id": None, "error": None})
         asyncio.create_task(_bg(req.max_cases, req.no_cache))
-        return {"started": True, "max_cases": req.max_cases, "no_cache": req.no_cache}
+        return {
+            "started": True,
+            "max_cases": req.max_cases,
+            "no_cache": req.no_cache,
+        }
 
     return router

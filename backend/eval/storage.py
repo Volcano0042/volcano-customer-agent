@@ -41,17 +41,31 @@ def load_cache(fingerprint: str) -> dict | None:
     return _read(_CACHE_DIR / f"{fingerprint}.json")
 
 
-def save_cache(fingerprint: str, transcript: dict, verdict: dict | None) -> None:
+def has_cache(fingerprint: str) -> bool:
+    """只看有没有，不解析——用于给看板报「缓存已就绪 N/M」。"""
+    return (_CACHE_DIR / f"{fingerprint}.json").exists()
+
+
+def save_cache(
+    fingerprint: str, transcript: dict, verdict: dict | None, judge_version: int = 0,
+) -> None:
     _ensure_dirs()
     _atomic_write(
         _CACHE_DIR / f"{fingerprint}.json",
-        {"transcript": transcript, "verdict": verdict},
+        {"transcript": transcript, "verdict": verdict, "judge_version": judge_version},
     )
 
 
 # ---------------- run 级归档 ----------------
 def new_run_id() -> str:
-    return datetime.now(_TZ_CN).strftime("run-%Y%m%d-%H%M%S")
+    """生成 run_id（文件名与 id 一致）。同一秒里重复调用自动加后缀，避免互相覆盖。"""
+    base = datetime.now(_TZ_CN).strftime("run-%Y%m%d-%H%M%S")
+    if not (_RUNS_DIR / f"{base}.json").exists():
+        return base
+    n = 2
+    while (_RUNS_DIR / f"{base}-{n}.json").exists():
+        n += 1
+    return f"{base}-{n}"
 
 
 def save_run(run: dict) -> Path:

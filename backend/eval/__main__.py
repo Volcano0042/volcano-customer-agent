@@ -16,8 +16,10 @@ def _fmt_ci(ci) -> str:
 
 
 def _print_summary(run: dict) -> None:
-    print(f"\n评测 {run['run_id']} · 模型={run['model']} · 裁判={run['judge_model']}"
+    print(f"\n评测 {run['run_id']} · 多 agent（监督者+专家） · 模型={run['model']} · 裁判={run['judge_model']}"
           f"{'（不可用，仅确定性判据）' if not run['judge_available'] else ''}")
+    hits = sum(1 for r in run["results"] if r["from_cache"])
+    print(f"缓存命中 {hits}/{len(run['results'])}（未命中的已实跑，并刷新缓存）")
     print(f"{'维度':<14}{'通过/总数':<12}{'通过率':<10}95% 置信区间")
     m = run["metrics"]
     for dim in ("task", "tool", "hallucination", "safety"):
@@ -39,7 +41,8 @@ def _print_summary(run: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Volcano 客服 Agent 端到端评测")
     parser.add_argument("--max", type=int, default=None, help="最多跑几条 case")
-    parser.add_argument("--no-cache", action="store_true", help="忽略缓存，全部重新实跑")
+    parser.add_argument("--cases", default="", help="只跑指定 case（逗号分隔的 id）")
+    parser.add_argument("--no-cache", action="store_true", help="忽略缓存全部实跑，跑完仍刷新缓存")
     args = parser.parse_args()
 
     run = asyncio.run(
@@ -47,6 +50,7 @@ def main() -> None:
             settings=get_settings(),
             max_cases=args.max,
             use_cache=False if args.no_cache else None,
+            case_ids=[c.strip() for c in args.cases.split(",") if c.strip()] or None,
         ),
     )
     _print_summary(run)

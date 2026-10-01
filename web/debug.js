@@ -352,12 +352,27 @@ async function renderEvalRun(runId) {
   $("#evalMetricGrid").innerHTML = ["task", "tool", "hallucination", "safety", "_overall"]
     .map((d) => evalMetricCardHtml(d, run.metrics[d])).join("");
   $("#evalCaseList").innerHTML = run.results.map(evalCaseRowHtml).join("");
-  $("#evalStatus").textContent = "运行 " + run.run_id + " · 模型 " + run.model
+  const hits = run.results.filter((r) => r.from_cache).length;
+  $("#evalStatus").textContent = "运行 " + run.run_id + " · 多 agent"
+    + " · 模型 " + run.model
     + " · 裁判 " + (run.judge_available ? run.judge_model : "未启用")
+    + " · 缓存命中 " + hits + "/" + run.results.length + "（其余实跑）"
     + " · " + new Date(run.created_at).toLocaleString("zh-CN");
 }
 
+async function loadCacheInfo() {
+  try {
+    const c = await api("/api/eval/cache");
+    $("#evalCacheInfo").textContent = c.enabled
+      ? "缓存已就绪 " + c.cached + "/" + c.total
+      : "缓存已关闭（EVAL_CACHE_ENABLED=false）";
+  } catch (e) {
+    $("#evalCacheInfo").textContent = "";
+  }
+}
+
 async function loadEval() {
+  loadCacheInfo();
   const s = await api("/api/eval/summary");
   if (!s.available) {
     $("#evalMetricGrid").innerHTML = "";

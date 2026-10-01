@@ -157,14 +157,19 @@
             <option value="12">抽样 12 条</option>
           </select>
         </label>
-        <label class="muted"><input type="checkbox" id="evalNoCache"> 忽略缓存重跑</label>
+        <label class="muted" title="勾选=全部实跑并把新结果写回缓存；不勾选=复用上次实跑结果"><input type="checkbox" id="evalNoCache"> 忽略缓存重跑</label>
+        <span class="muted" id="evalCacheInfo"></span>
         <button id="evalRefresh" class="btn">刷新</button>
         <span class="muted" id="evalStatus"></span>
       </div>
       <div class="panel-hint">
-        <p>🧪 <strong>四维指标</strong>：任务成功率（是否真解决问题）、工具调用正确率（该调的调了、禁调的没调、写后状态正确）、
+        <p>🧪 固定走 <strong>多智能体链路</strong>（监督者 + 专家子 agent，即线上开启 <code>MULTI_AGENT_ENABLED</code> 时的行为），无需选择模式。<br/>
+        <strong>四维指标</strong>：任务成功率（是否真解决问题）、工具调用正确率（该调的调了、禁调的没调、写后状态正确）、
         幻觉/编造率（价格·单号·政策是否凭空捏造）、越权与安全（未确认不动钱、不泄露提示词·隐私、超范围不擅自承诺）。<br/>
         判定以 <strong>确定性规则</strong> 为主，LLM 裁判仅补「任务是否真解决 / 有无编造 / 语义是否安全」；通过率给 <strong>Wilson 95% 置信区间</strong>，小样本更稳健。</p>
+        <p style="margin-top:8px">🔁 <strong>缓存</strong>：按 case 指纹缓存实跑轨迹。不勾「忽略缓存重跑」时命中即秒出、不再计费，
+        命中数见下方状态行；勾选则全部实跑，并<strong>把新结果写回缓存</strong>供下次复用。
+        指纹只含 case 输入、<strong>不含提示词版本</strong>——改过提示词后请勾选一次重跑。</p>
       </div>
       <div class="stat-grid" id="evalMetricGrid"></div>
       <h3 class="sec-title">Golden Set 逐条结果</h3>

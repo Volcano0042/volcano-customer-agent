@@ -176,6 +176,22 @@ def anyio_backend():
     return "asyncio"
 
 
+async def test_health_api_reports_supervisor_model():
+    """健康检查上报模式与监督者模型。"""
+    import httpx
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=_import_app()),
+        base_url="http://test",
+    ) as client:
+        r = await client.get("/api/health")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "ok"
+        assert data["mode"] in {"single_agent", "multi_agent"}
+        assert "supervisor_model" in data
+
+
 async def test_config_api():
     import httpx
 
@@ -216,6 +232,78 @@ async def test_chat_api_sse():
         assert done, body[-500:]
         assert done[-1]["tokens_in"] > 0
         assert done[-1]["tokens_out"] > 0
+
+
+def _chat_streamer():
+    from backend.config import get_settings
+    from backend.service import ChatStreamer
+
+    return ChatStreamer(get_settings(), "sess_narration")
+
+
+def _deltas(chunks):
+    """取出这批 SSE 片段里的 delta 文本。"""
+    return [
+        json.loads(c.split("data: ", 1)[1])["text"]
+        for c in chunks
+        if c.startswith("event: delta")
+    ]
+
+
+def test_narration_before_tool_call_is_dropped():
+    """调工具前的过程性旁白（"I'll check…"）不得推给用户，工具轮后正文照常流式。"""
+    from agentscope.event import (
+        ModelCallEndEvent,
+        TextBlockDeltaEvent,
+        ToolCallStartEvent,
+    )
+
+    st = _chat_streamer()
+    narrate = TextBlockDeltaEvent(
+        reply_id="r", block_id="b1", delta="I'll check the order status for you.",
+    )
+    assert _deltas(st._translate(narrate)) == []
+
+    st._translate(ToolCallStartEvent(
+        reply_id="r", tool_call_id="c1", tool_call_name="query_order",
+    ))
+    st._translate(ModelCallEndEvent(reply_id="r", input_tokens=1, output_tokens=1))
+
+    # 工具结果之上的正文立即逐块推送，不再整段缓冲到模型调用结束
+    answer = TextBlockDeltaEvent(reply_id="r", block_id="b2", delta="订单已发货")
+    assert _deltas(st._translate(answer)) == ["订单已发货"]
+
+
+def test_short_answer_without_tool_is_flushed_at_model_end():
+    """纯闲聊没有工具轮兜底：缓冲在模型调用结束时推送，不能丢。"""
+    from agentscope.event import ModelCallEndEvent, TextBlockDeltaEvent
+
+    st = _chat_streamer()
+    hello = TextBlockDeltaEvent(reply_id="r", block_id="b1", delta="您好～")
+    assert _deltas(st._translate(hello)) == []
+    end = ModelCallEndEvent(reply_id="r", input_tokens=1, output_tokens=1)
+    assert _deltas(st._translate(end)) == ["您好～"]
+
+
+def test_long_text_without_tool_starts_streaming():
+    """无工具调用时缓冲超限即转流式，避免整段延迟。"""
+    from agentscope.event import TextBlockDeltaEvent
+
+    st = _chat_streamer()
+    long_delta = TextBlockDeltaEvent(reply_id="r", block_id="b1", delta="啰" * 200)
+    assert _deltas(st._translate(long_delta)) == ["啰" * 200]
+    more = TextBlockDeltaEvent(reply_id="r", block_id="b1", delta="嗦")
+    assert _deltas(st._translate(more)) == ["嗦"]
+
+
+def test_buffered_text_is_flushed_at_reply_end():
+    """兜底：模型调用没正常收尾（如中途报错）时，缓冲里的正文也不能丢。"""
+    from agentscope.event import ReplyEndEvent, TextBlockDeltaEvent
+
+    st = _chat_streamer()
+    st._translate(TextBlockDeltaEvent(reply_id="r", block_id="b1", delta="您好～"))
+    end = st._translate(ReplyEndEvent(reply_id="r", session_id="s", finished_reason="completed"))
+    assert _deltas(end) == ["您好～"]
 
 
 async def test_debug_api_trace_pipeline():

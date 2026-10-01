@@ -119,5 +119,16 @@
     "priority": "low",
     "status": "待处理",
     "created_at": "2026-09-14 11:30"
+  },
+  {
+    "ticket_id": "TKDAAD2915F6",
+    "title": "转人工客服请求",
+    "detail": "转人工原因：用户明确要求人工服务，退货咨询需人工客服处理",
+    "category": "other",
+    "contact": "",
+    "order_id": "",
+    "priority": "high",
+    "status": "待处理",
+    "created_at": "2026-10-01 15:29"
   }
 ]
