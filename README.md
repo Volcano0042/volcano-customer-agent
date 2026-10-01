@@ -1,6 +1,6 @@
-# Volcano toC 智能客服系统
+# Volcano toC 多智能体智能客服系统
 
-基于 [AgentScope 2.0](https://github.com/agentscope-ai/agentscope) 构建的电商智能客服 Agent：以 ReAct 循环驱动推理与工具调用，覆盖「浏览商品 → 加购物车 → 下单 → 支付 → 查订单/物流 → 退款 → 转人工」完整链路；前端通过 SSE 实时展示思考过程、工具调用与回复。
+基于 [AgentScope 2.0](https://github.com/agentscope-ai/agentscope) 构建的电商智能客服 Agent：以 ReAct 循环驱动推理与工具调用，覆盖「浏览商品 → 加购物车 → 下单 → 支付 → 查订单/物流 → 退款 → 转人工」完整链路。多智能体模式下拆成两层——监督者只做意图路由与转述、不持有业务工具，4 个专家子 agent 各自带着职责内的工具子集分域取数与处置。前端通过 SSE 实时展示思考过程、工具调用与回复。
 
 **无需 API Key 即可体验**：内置离线规则模型，clone 后不做任何配置就能完整跑通（含真实工具调用与多轮对话）。
 
@@ -58,6 +58,13 @@ uv add <package>                 # 新增依赖，自动写入 pyproject.toml �
 - **监督者**只做意图判断、编写自包含的任务描述与转述结果，自身不查数据、不执行业务，只持有 4 个委派工具；
 - **专家子 agent** 按委派临时创建，各自只装配职责内的工具子集与独立上下文，跑完把结论回填给监督者。
 
+一轮消息的编排：
+
+1. 监督者读用户消息，判断该由哪个（或哪几个）专家处理；
+2. 把订单号、手机号后四位、用户已确认的意愿等关键信息写成**自包含的 task**，调用 `delegate_to_*` 委派；
+3. 专家在自己的上下文里跑一轮 ReAct（查订单、查政策、执行退款…），把结论与用到的工具回填；
+4. 同一回合委派多个专家时由 AgentScope 并发执行；只委派一个且答案完整时按 `PASSTHROUGH_SINGLE_DELEGATION` 直接采用专家答案，否则由监督者综合转述。
+
 | 委派工具 | 角色 | 工具子集 |
 |---|---|---|
 | `delegate_to_knowledge_agent` | 知识检索专家（只读） | `search_faq` |
@@ -65,7 +72,7 @@ uv add <package>                 # 新增依赖，自动写入 pyproject.toml �
 | `delegate_to_refund_agent` | 退款售后专家 | `query_order`、`list_recent_orders`、`check_refund_policy`、`apply_refund`、`cancel_order`、`create_ticket`、`transfer_to_human` |
 | `delegate_to_shopping_agent` | 导购交易专家 | `list_products`、`query_product`、`view_cart`、`add_to_cart`、`update_cart_item`、`place_order`、`pay_order`、`query_user_profile` |
 
-专家子 agent 看不到原始对话，因此委派时必须把订单号、手机号后四位、用户已确认的意愿等信息写进 task；同一回合委派多个专家时由 AgentScope 并发执行。四个专家的工具子集合计覆盖全部 17 个业务工具，`tests/test_multi_agent.py` 有回归测试守住这一点。
+四个专家的工具子集合计覆盖全部 17 个业务工具，`tests/test_multi_agent.py` 有回归测试守住这一点。
 
 转人工同理：`transfer_to_human` 只挂在退款售后专家名下，监督者手里没有，因此提示词显式规定「用户明确要求转人工 → 委派给该专家」。
 
@@ -104,25 +111,11 @@ uv add <package>                 # 新增依赖，自动写入 pyproject.toml �
 | 越权与安全 | 22/22 | **100%** | [0.85, 1.00] |
 | 整体 | 45/50 | **90%** | [0.79, 0.96] |
 
-分母口径：单条 case 只计入它声明的维度；整体分母是全部 50 条 case，声明的维度全过才算整体通过。完整轨迹与逐条打分明细归档在 `backend/data/eval/runs/run-20261001-145129.json`，也可在调试平台「🧪 端到端评测」里逐条查看。
-
-**怎么测的**（链路与开关细节见「端到端 Agent 评测」一节）：
-
 - **Golden set 50 条**，贴着演示数据编写，按场景分布：越权与安全 16、知识检索 15、退款取消 7、订单 4、购物闭环 4、物流 2、转人工 2；每条 case 显式声明自己参与统计的维度（同一 case 可同时计入多个维度）。
 - **被测链路**固定走多智能体（监督者 + 专家子 agent），与线上 `MULTI_AGENT_ENABLED=true` 时一致，不含任何 mock 或降级路径。
 - **判定以确定性判据为主**：工具集合（`tools_any` / `tools_all` / `tools_forbidden`）、回复关键词、订单写后状态、危险写门控；LLM-as-judge 只补规则判不了的三件事——任务是否真正解决、有无编造、语义层是否安全。
 - **隔离**：每条 case 开跑前回滚业务数据快照，退款、加购等写操作不跨 case 污染；单条调用超时只算该条失败，不拖垮整轮。
 - **区间**：每维通过率配 Wilson 95% 置信区间，小样本不会把「4/4」当作确定的 100%。
-
-> 三点读表须知：
->
-> - **跨轮比较前先对齐判定覆盖率**：`EVAL_JUDGE_TIMEOUT` 偏小时，超时的 case 不记为失败，而是让该维度**不进分母**——极端情况下该 case 会因为失败的维度被丢掉而整体算通过。判定覆盖率不一致的两轮不能直接比较。
-> - **单轮 50 条分辨不出 3pt 级差异**：同一批轨迹、同一裁判在温度 0 下判两次，仍有 5%~15% 的 case 结论不同（约合 3~7 条）。要比较两个配置的优劣，需要重复多轮取平均，或扩大 golden set。
-> - **改过提示词或判据后要勾一次「忽略缓存重跑」**：缓存键只含 case 指纹（`id` + 轮次内容），不含提示词。它只跳过**读取**，实跑出的新轨迹与裁决仍写回缓存；`EVAL_CACHE_ENABLED=false` 才是既不读也不写的总开关。判据或裁判视野变更时 `JUDGE_VERSION` 会 +1，缓存里的旧裁决自动作废并复用轨迹重判，无需重新驱动模型。
-
-### 延迟优化对比
-
-关掉两个延迟优化（`SUPERVISOR_MODEL=` 留空 + `PASSTHROUGH_SINGLE_DELEGATION=false`）的同一 golden set 结果是在上一版判据下测的，与上表口径不一致，需重测后才能并列比较；两个配置的用户可见延迟差异见上一节。
 
 ## Agentic RAG 知识检索
 
