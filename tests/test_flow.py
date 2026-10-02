@@ -911,3 +911,113 @@ async def test_reranker_degrades_when_unconfigured():
     rr = Reranker(get_settings())
     assert rr.available is False                       # conftest 已关精排
     assert await rr.rerank("退货规则", ["七天无理由退货", "运费规则"]) is None
+
+
+# ---------------- Agentic RAG：反思式检索（Self-RAG / CRAG）离线单测 ----------------
+# 用假评估器与假检索器驱动 _reflective_search 的分支，全程无网络。
+
+def _patch_reflector(monkeypatch, verdicts, available=True):
+    """把 knowledge 模块里的 RetrievalReflector 换成脚本化的假评估器。"""
+    from backend.tools import knowledge
+
+    class _Fake:
+        def __init__(self, settings):
+            self.available = available
+            self._v = list(verdicts)
+
+        async def evaluate(self, question, results):
+            return self._v.pop(0) if self._v else None
+
+    monkeypatch.setattr(knowledge, "RetrievalReflector", _Fake)
+
+
+class _FakeKB:
+    """按 query 返回预设命中的假检索器，并记录被检索过的 query。"""
+
+    def __init__(self, hits_by_query):
+        self._hits = hits_by_query
+        self.calls = []
+
+    async def search(self, query, entries):
+        self.calls.append(query)
+        return self._hits.get(query, {"results": [], "confidence": "high"})
+
+
+async def test_reflector_unavailable_offline():
+    """conftest 关闭反思后评估器不可用，evaluate 直接返回 None。"""
+    from backend.config import get_settings
+    from backend.rag.reflector import RetrievalReflector
+
+    r = RetrievalReflector(get_settings())
+    assert r.available is False
+    assert await r.evaluate("退货规则", [{"title": "x", "snippet": "y"}]) is None
+
+
+async def test_reflective_search_skipped_when_unavailable(monkeypatch):
+    """评估器不可用时原样返回，不触发任何重检。"""
+    from types import SimpleNamespace
+    from backend.tools import knowledge
+
+    _patch_reflector(monkeypatch, [], available=False)
+    kb = _FakeKB({})
+    hit = {"results": [{"title": "x"}], "confidence": "low"}
+    out = await knowledge._reflective_search(
+        SimpleNamespace(reflect_max_rounds=1), kb, "q", [], hit,
+    )
+    assert out is hit
+    assert kb.calls == []
+
+
+async def test_reflective_search_upgrades_when_sufficient(monkeypatch):
+    """反思判定资料够用：把 low 升级为 high，且不做重检。"""
+    from types import SimpleNamespace
+    from backend.tools import knowledge
+
+    _patch_reflector(monkeypatch, [{"sufficient": True, "rewrite": "", "reason": "ok"}])
+    kb = _FakeKB({})
+    hit = {"results": [{"title": "x", "snippet": "y"}], "confidence": "low"}
+    out = await knowledge._reflective_search(
+        SimpleNamespace(reflect_max_rounds=1), kb, "q", [], hit,
+    )
+    assert out["confidence"] == "high"
+    assert kb.calls == []
+
+
+async def test_reflective_search_rewrites_and_retrieves(monkeypatch):
+    """反思判定不足并给出改写：按改写重检一次并采用新结果。"""
+    from types import SimpleNamespace
+    from backend.tools import knowledge
+
+    _patch_reflector(monkeypatch, [
+        {"sufficient": False, "rewrite": "保价", "reason": "答非所问"},
+    ])
+    retry_hit = {
+        "results": [{"title": "保价规则", "snippet": "7 天降价退差价", "source_id": "F2"}],
+        "confidence": "high",
+    }
+    kb = _FakeKB({"保价": retry_hit})
+    hit = {"results": [{"title": "无关", "snippet": "z", "source_id": "F1"}], "confidence": "low"}
+    out = await knowledge._reflective_search(
+        SimpleNamespace(reflect_max_rounds=1), kb, "买贵了", [], hit,
+    )
+    assert kb.calls == ["保价"]                        # 用改写查询重检了一次
+    assert out["confidence"] == "high"
+    assert out["results"][0]["source_id"] == "F2"
+
+
+async def test_reflective_search_bounded_by_max_rounds(monkeypatch):
+    """反思/重检次数受 max_rounds 约束，不会无限循环。"""
+    from types import SimpleNamespace
+    from backend.tools import knowledge
+
+    # 每次都判不足并给改写，若不受限会一直重检
+    _patch_reflector(monkeypatch, [
+        {"sufficient": False, "rewrite": "改写", "reason": "r"} for _ in range(5)
+    ])
+    kb = _FakeKB({"改写": {"results": [{"title": "t"}], "confidence": "low"}})
+    hit = {"results": [{"title": "x"}], "confidence": "low"}
+    out = await knowledge._reflective_search(
+        SimpleNamespace(reflect_max_rounds=1), kb, "q", [], hit,
+    )
+    assert len(kb.calls) == 1                          # 只重检一次
+    assert out["confidence"] == "low"                  # 仍不足则保持 low

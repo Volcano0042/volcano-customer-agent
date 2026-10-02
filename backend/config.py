@@ -73,6 +73,13 @@ class Settings:
     rerank_timeout: float = 8.0          # 精排请求超时（秒）
     rag_high_conf_bar: float = 0.20      # 精排得分下限，低于则标 low 置信并提示澄清/转人工
 
+    # ---- Agentic RAG：反思式检索（Self-RAG / CRAG：检索评估器 + 改写重检）----
+    rag_reflect_enabled: bool = False    # 低置信时是否让模型判「够不够答」并改写重检
+    reflect_model: str = ""              # 反思评估器用的对话模型名（值走 .env）
+    reflect_base_url: str = ""           # OpenAI 兼容 chat 端点 base_url（值走 .env）
+    reflect_timeout: float = 8.0         # 单次反思请求超时（秒）
+    reflect_max_rounds: int = 1          # 最多反思/重检轮次，控制延迟
+
     # ---- 端到端 Agent 评测（真实模型 + LLM-as-judge）----
     eval_judge_model: str = ""           # 裁判模型名（值走 .env）
     eval_judge_base_url: str = ""        # OpenAI 兼容 chat 端点 base_url（值走 .env）
@@ -126,6 +133,20 @@ def _resolve_rerank_provider() -> str:
     return "none"
 
 
+def _resolve_reflect_enabled() -> bool:
+    """反思式检索开关：显式设置优先；否则配了反思模型 + 端点且有 DashScope Key 就自动启用。"""
+    v = os.getenv("RAG_REFLECT_ENABLED", "").strip().lower()
+    if v in {"1", "true", "yes", "on"}:
+        return True
+    if v in {"0", "false", "no", "off"}:
+        return False
+    return bool(
+        os.getenv("RAG_REFLECT_MODEL", "").strip()
+        and os.getenv("RAG_REFLECT_BASE_URL", "").strip()
+        and os.getenv("DASHSCOPE_API_KEY")
+    )
+
+
 @lru_cache
 def get_settings() -> Settings:
     provider = _resolve_provider()
@@ -175,6 +196,11 @@ def get_settings() -> Settings:
         rerank_base_url=os.getenv("RERANK_BASE_URL", "").strip(),
         rerank_timeout=float(os.getenv("RERANK_TIMEOUT", "8.0")),
         rag_high_conf_bar=float(os.getenv("RAG_HIGH_CONF_BAR", "0.20")),
+        rag_reflect_enabled=_resolve_reflect_enabled(),
+        reflect_model=os.getenv("RAG_REFLECT_MODEL", "").strip(),
+        reflect_base_url=os.getenv("RAG_REFLECT_BASE_URL", "").strip().rstrip("/"),
+        reflect_timeout=float(os.getenv("RAG_REFLECT_TIMEOUT", "8.0")),
+        reflect_max_rounds=int(os.getenv("RAG_REFLECT_MAX_ROUNDS", "1")),
         eval_judge_model=os.getenv("EVAL_JUDGE_MODEL", "").strip(),
         eval_judge_base_url=os.getenv("EVAL_JUDGE_BASE_URL", "").strip().rstrip("/"),
         eval_judge_timeout=float(os.getenv("EVAL_JUDGE_TIMEOUT", "120.0")),

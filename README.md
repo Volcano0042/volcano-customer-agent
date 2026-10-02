@@ -8,7 +8,7 @@
 
 - **17 个业务工具**覆盖售前 / 售中 / 售后全流程；查询类工具只读，写操作（退款、取消、下单、支付、建工单）先向用户说明影响，确认后再执行。
 - **业务数据不编造**：订单、物流、退款、用户信息一律以工具返回为准，模型没有「直接回答」的捷径。
-- **Agentic RAG 知识检索**：政策类问题走「查询改写 → 多查询混合召回（向量 + 词面）→ gte-rerank 精排 → 置信度自检」，回复附带原文出处；未配 Key 时优雅降级为纯词面检索。
+- **Agentic RAG 知识检索**：政策类问题走「查询改写 → 多查询混合召回（向量 + 词面）→ gte-rerank 精排 → 置信度自检 → 反思式检索」，低置信时让模型判定资料够不够答、不足则改写重检，回复附带原文出处；未配 Key 时优雅降级为纯词面检索。
 - **多智能体模式（可选）**：`MULTI_AGENT_ENABLED=true` 时改为「监督者路由 + 4 个专家子 agent」两层结构，专家各自只持有职责内的工具子集与独立上下文；默认关闭，走单 Agent 主链路。经三处延迟优化后，单域问题约 4~6s。
 - **端到端 Agent 评测**：50 条 golden set 覆盖任务成功率、工具调用正确率、幻觉率、越权与安全四个维度，真实模型驱动 + LLM-as-judge 裁判，指标带 Wilson 95% 置信区间。多智能体配置实测：任务成功率 94%、工具调用正确率 88%、幻觉与安全 100%、整体 90%。
 - **可视化调试平台（Fire Trace）**：每轮推理记录为 span 树，前端提供调用树、火焰图与瀑布时间线，可定位首 token 延迟与每步工具耗时。
@@ -46,7 +46,7 @@ uv add <package>                 # 新增依赖，自动写入 pyproject.toml �
 | `FunctionTool` / `Toolkit` | `backend/tools/` — 17 个工具，从 docstring 自动解析 schema |
 | `AgentState` | `backend/session_manager.py` — 每会话独立上下文 |
 | 多智能体（可选） | `backend/multi_agent/` — 监督者 + 专家子 agent（agent-as-tool） |
-| 知识检索 | `backend/rag/` — 查询改写 / 混合召回 / 精排 / 置信度，`search_faq` 工具接入 |
+| 知识检索 | `backend/rag/` — 查询改写 / 混合召回 / 精排 / 置信度 / 反思式检索，`search_faq` 工具接入 |
 | 事件流 | `backend/service.py` — 订阅事件并翻译为 SSE |
 | 追踪 | `backend/tracing.py` — Span / Trace，供调试平台使用 |
 | 评测 | `backend/eval/` — golden set / 驱动 / 裁判 / 打分 / 指标，`backend/eval_api.py` 对外 |
@@ -125,9 +125,10 @@ uv add <package>                 # 新增依赖，自动写入 pyproject.toml �
 2. **混合召回**：每个变体同时做向量语义（DashScope Embedding）与词面匹配打分，按知识条目取跨变体最高分，放宽召回 `rag_recall_k` 条候选。
 3. **精排**：`gte-rerank-v2` 交叉编码器按原始问题重排候选，精排得分主导最终排序。
 4. **置信度自检**：精排后最高分低于阈值则标为 `low`，提示模型澄清或转人工，而不是硬答。
-5. **引用溯源**：返回结构化 `citations`（标题 + 片段），前端在回复下方渲染原文出处，便于核对与防编造。
+5. **反思式检索（Self-RAG / CRAG）**：仅对落在 `low` 灰区的结果触发——让模型评判「检索到的资料够不够答该问题」，判定够用则把置信度升回 `high`（救回精排误杀），判定不足则给出改写查询**重检一次**，仍不确定才转人工。反思与重检次数受 `RAG_REFLECT_MAX_ROUNDS`（默认 1）约束，避免无限循环；走 DashScope 兼容端点、复用 `DASHSCOPE_API_KEY`，强制 JSON 输出。
+6. **引用溯源**：返回结构化 `citations`（标题 + 片段），前端在回复下方渲染原文出处，便于核对与防编造。
 
-**优雅降级**：未配 `DASHSCOPE_API_KEY` 时，向量与精排自动跳过，退回纯词面检索 —— 离线 Demo 与测试不受影响，结果确定可复现。相关开关见 `.env.example` 的 `QUERY_REWRITE_ENABLED` / `RERANK_*` / `EMBED_*`。
+**优雅降级**：未配 `DASHSCOPE_API_KEY` 时，向量与精排自动跳过，退回纯词面检索；反思式检索在缺配置时不启用，`search_faq` 的 `found` / `results` 结构始终不变 —— 离线 Demo 与测试不受影响，结果确定可复现。相关开关见 `.env.example` 的 `QUERY_REWRITE_ENABLED` / `RERANK_*` / `EMBED_*` / `RAG_REFLECT_*`。
 
 ## 端到端 Agent 评测
 
@@ -190,7 +191,7 @@ backend/
   models.py           模型工厂（dashscope / openai / mock）
   mock_model.py       离线规则模型
   multi_agent/        多智能体：监督者 / 专家子 agent / 终答透传
-  rag/                Agentic RAG：查询改写 / 混合召回 / 精排 / 置信度
+  rag/                Agentic RAG：查询改写 / 混合召回 / 精排 / 置信度 / 反思式检索
   service.py          事件流 → SSE 翻译
   tracing.py          推理链路追踪（Span / Trace / 火焰图）
   debug.py            调试平台 API

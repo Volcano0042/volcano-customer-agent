@@ -9,6 +9,10 @@ import os
 
 os.environ["EMBED_PROVIDER"] = "none"
 os.environ["RERANK_PROVIDER"] = "none"
+# 反思式检索走真实模型 API：测试里显式关闭并清空配置，RetrievalReflector.available=False。
+os.environ["RAG_REFLECT_ENABLED"] = "false"
+os.environ["RAG_REFLECT_MODEL"] = ""
+os.environ["RAG_REFLECT_BASE_URL"] = ""
 # 评测裁判走真实模型 API：测试里清空裁判配置，Judge.available=False，全程离线确定性判定。
 os.environ["EVAL_JUDGE_MODEL"] = ""
 os.environ["EVAL_JUDGE_BASE_URL"] = ""

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""FAQ 检索工具：底层调用 backend/rag 的改写 + 混合召回 + 精排流水线。
+"""FAQ 检索工具：底层调用 backend/rag 的改写 + 混合召回 + 精排 + 反思式检索流水线。
 
 每条命中带 source_id 与 snippet，工具汇总为 citations 供 Agent 按来源作答、前端溯源。
 无 Key 或调用失败时逐级降级到纯词面检索，found / results 结构不变；
@@ -7,7 +7,39 @@
 """
 from ..config import get_settings
 from ..rag import get_knowledge_base
+from ..rag.reflector import RetrievalReflector
 from ..store.mock_store import faq_store
+
+
+async def _reflective_search(settings, kb, question: str, entries, hit: dict) -> dict:
+    """低置信时让模型判「够不够答」，不足则改写重检一次（有界、可降级）。
+
+    反思只在有精排分且被判 low 的灰区触发；不可用或判定够用即原样返回，
+    避免无谓多一次模型调用。
+    """
+    reflector = RetrievalReflector(settings)
+    if not reflector.available:
+        return hit
+    best = hit
+    for _ in range(max(1, settings.reflect_max_rounds)):
+        results = best.get("results") or []
+        if not results or best.get("confidence") != "low":
+            break
+        verdict = await reflector.evaluate(question, results)
+        if verdict is None:
+            break
+        if verdict.get("sufficient"):
+            # 反思认为其实够用：升级 high，避免误转人工
+            best = {**best, "confidence": "high"}
+            break
+        rewrite = verdict.get("rewrite") or ""
+        if not rewrite:
+            break
+        retry = await kb.search(rewrite, entries)
+        if not retry.get("results"):
+            break
+        best = retry
+    return best
 
 
 async def search_faq(question: str) -> dict:
@@ -20,6 +52,7 @@ async def search_faq(question: str) -> dict:
     entries = await faq_store.all()
     kb = await get_knowledge_base(settings)
     hit = await kb.search(question, entries)
+    hit = await _reflective_search(settings, kb, question, entries, hit)
     results = hit.get("results", [])
     confidence = hit.get("confidence", "high")
 
